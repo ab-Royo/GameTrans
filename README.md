@@ -1,3 +1,5 @@
+<img src="docs/images/icon.png" width="72" align="right" />
+
 # GameTrans
 
 面向 PC 游戏的实时聊天翻译工具。以屏幕指定区域为识别范围，按快捷键截图并交由 DeepSeek 视觉模型完成文字识别与翻译，结果以可配置样式的文本层叠加在原位显示；另提供输入翻译通道，将中文输入翻译为英文并写入剪贴板。
@@ -23,13 +25,25 @@
 
 ## 界面
 
-| 设置 | 文本叠加层 |
-|---|---|
-| ![设置](docs/images/settings.png) | ![叠加层](docs/images/overlay.png) |
+**启动页**
 
-| 输入翻译（F9） | 术语 / 黑话对照表 |
-|---|---|
-| ![输入](docs/images/input.png) | ![术语表](docs/images/glossary.png) |
+<img src="docs/images/startup.png" width="620">
+
+**设置**
+
+<img src="docs/images/settings.png" width="520">
+
+**文本叠加层**（识别区域为 370 × 130 像素时的排版结果）
+
+<img src="docs/images/overlay.png" width="247">
+
+**输入翻译（F9）**
+
+<img src="docs/images/input.png" width="534">
+
+**术语 / 黑话对照表**
+
+<img src="docs/images/glossary.png" width="712">
 
 ## 环境要求
 
