@@ -49,7 +49,7 @@ public sealed class TrayApp : IDisposable
         {
             _tray = new NotifyIcon
             {
-                Icon = CreateTrayIcon(),
+                Icon = LoadTrayIcon(),
                 Text = "GameTrans 游戏聊天翻译",
                 Visible = true,
             };
@@ -84,6 +84,25 @@ public sealed class TrayApp : IDisposable
         return menu;
     }
 
+    private static Drawing.Icon LoadTrayIcon()
+    {
+        try
+        {
+            var path = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(path))
+            {
+                using var extracted = Drawing.Icon.ExtractAssociatedIcon(path);
+                if (extracted != null)
+                    return new Drawing.Icon(extracted, new Drawing.Size(32, 32));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("读取应用图标失败，改用运行时绘制: " + ex.Message);
+        }
+
+        return CreateTrayIcon();
+    }
     private static Drawing.Icon CreateTrayIcon()
     {
         try

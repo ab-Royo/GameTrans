@@ -12,6 +12,7 @@
     <RootNamespace>GameTrans</RootNamespace>
     <StartupObject>GameTrans.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <Product>GameTrans</Product>
     <AssemblyTitle>GameTrans 游戏聊天翻译</AssemblyTitle>
