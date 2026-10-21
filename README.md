@@ -150,10 +150,10 @@ F9 ─► 以识别区域左上角为锚点弹出输入框（半透明）
 ## 构建与发布
 
 ```powershell
-# 构建
-dotnet build src/GameTrans/GameTrans.csproj -c Release
+# 构建（解决方案，可用 Visual Studio 2022 / Rider 直接打开）
+dotnet build GameTrans.sln -c Release
 
-# 发布单文件（win-x64 / 自包含）
+# 发布单文件（win-x64 / 自包含），并自动执行自检
 powershell -ExecutionPolicy Bypass -File scripts/publish.ps1
 ```
 
