@@ -181,7 +181,7 @@ dist\GameTrans.exe --selftest .\out
 
 | 参数 | 说明 |
 |---|---|
-| `--selftest <目录>` | 无界面自检，输出 `report.txt` 与中间产物 |
+| `--selftest <目录> [--headless]` | 无界面自检，输出 `report.txt` 与中间产物；`--headless` 跳过屏幕相关检查（用于 CI） |
 | `--set-key <API_KEY>` | 加密保存 API Key |
 | `--api-test <API_KEY>` | 文本探针，验证接口连通性 |
 | `--api-text <API_KEY> <文本>` | 按 F9 方向翻译指定文本 |

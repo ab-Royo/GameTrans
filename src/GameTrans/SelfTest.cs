@@ -19,6 +19,8 @@ internal static class SelfTest
             : Path.Combine(Path.GetTempPath(), "GameTrans-selftest");
         Directory.CreateDirectory(outDir);
 
+        bool headless = args.Any(a => a.Equals("--headless", StringComparison.OrdinalIgnoreCase));
+
         var log = new StringBuilder();
         int failures = 0;
 
@@ -60,6 +62,11 @@ internal static class SelfTest
         region = new RegionPx(region.Left, region.Top, region.Left + 600, region.Top + 260);
 
         BitmapSource? shot = null;
+        if (headless)
+        {
+            log.AppendLine("[SKIP] 截屏（headless 模式，无桌面会话）");
+        }
+        else
         Step($"截屏 {region.Width}x{region.Height} @ ({region.Left},{region.Top})", () =>
         {
             shot = ScreenCapture.Capture(region);
@@ -88,6 +95,11 @@ internal static class SelfTest
             if (avg < 1.0) throw new Exception("截图为纯黑，可能被 DWM 保护或权限不足");
         });
 
+        if (headless)
+        {
+            log.AppendLine("[SKIP] 叠加层离屏渲染（headless 模式）");
+        }
+        else
         Step("叠加层离屏渲染", () =>
         {
             var s = new AppSettings();
