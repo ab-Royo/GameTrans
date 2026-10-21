@@ -1,0 +1,24 @@
+# 构建产物
+bin/
+obj/
+dist/
+artifacts/
+publish/
+*.user
+*.suo
+.vs/
+.idea/
+
+# 运行期文件
+*.log
+settings.json
+portable.txt
+
+# 本地逆向分析资料，不入库
+_analysis/
+_private/
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
