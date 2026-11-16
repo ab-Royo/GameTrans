@@ -13,6 +13,23 @@ A real-time chat translator for PC games. It captures a chosen screen region wit
 
 Current version: **1.3.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
 
+## Contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [How it works](#how-it-works)
+- [Build & release](#build--release)
+- [Command-line options](#command-line-options)
+- [FAQ](#faq)
+- [Privacy & security](#privacy--security)
+- [Community](#community)
+- [Disclaimer](#disclaimer)
+- [License](#license)
+
 ## Features
 
 | Capability | Details |
