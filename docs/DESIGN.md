@@ -12,6 +12,7 @@ src/GameTrans
 ├─ SelfTest.cs           无界面自检
 ├─ Core
 │  ├─ AppInfo.cs         版本与产品标识
+│  ├─ Localization.cs    界面语言、语言代码、目标 API 预设与外部链接
 │  ├─ Win32.cs           P/Invoke：GDI、DPI、窗口样式、热键、DPAPI
 │  ├─ ScreenCapture.cs   抓帧、PNG 编码、坐标与 DPI 换算
 │  ├─ AppSettings.cs     配置模型、默认值、夹紧与归一化
@@ -129,7 +130,9 @@ src/GameTrans
 
 术语表以「`- 词条 = 含义`」列表追加在规则之后，并注明「表中未收录的词按上下文判断」，避免模型对表外词生硬套用。
 
-输入翻译（F9）使用独立系统提示词：目标语言默认英文，要求一行对一行、短句不扩写、语气与原意一致。
+输入翻译（F9）使用独立系统提示词：目标语言由设置决定，要求一行对一行、短句不扩写、语气与原意一致。
+
+提示词内的语言名由 `Languages.PromptName` 统一生成（中文提示词中固定使用「自动识别 / 中文（简体）/ English / 韩语 / 日语」），与界面语言解耦，避免切换 UI 语言影响模型行为。
 
 ## 8. 配置与存储
 
@@ -152,3 +155,25 @@ F9 译文写入剪贴板不使用 WPF `Clipboard.SetText`：剪贴板被其他�
 - 鼠标键热键为轮询实现，无法拦截原始按键；游戏侧同名绑定会同时触发。
 - 仅在 100% 与 150% 缩放、单双屏环境完成验证；极端混合 DPI 建议实测。
 - 独占全屏与受 DRM 保护的画面无法截取，属系统限制。
+
+## 11. 界面本地化
+
+- 语言集合固定为 `zh`（简体中文）与 `en`（English），保存在 `ui.language`。所有用户可见文案通过 `Loc.T("中文", "English")` 二选一，不引入资源文件，避免打包与查找成本；日志与异常堆栈保持中文。
+- 语言代码（`auto` / `zh` / `en` / `ko` / `ja`）存储在配置里，界面显示名由 `Languages.Display` 按当前语言生成；提示词内的语言名由 `Languages.PromptName` 固定用中文表述，与 UI 语言解耦。
+- 设置页的控件构建全部集中到 `BuildBody()`：切换语言时就地重建整页（保留 `PasswordBox` 内容与未保存的其它编辑），保存后通知 `TrayApp` 重建托盘菜单；若启动页可见则关闭后用新语言重开。取消/关闭未保存时把 `Loc` 还原为打开时的语言，避免「界面变英文但配置仍是中文」。
+- 旧配置中的语言名（`中文（简体）`、`English`、`自动识别` 等）在 `AppSettings.Normalize()` 中归一化为语言代码；未知值按 `auto`（源语言）或 `zh`（目标语言）处理。
+- 英文布局适配：设置页标签列加宽（88 → 122 DIP）、按钮使用 `MinWidth` 并按内容撑开、复选框拆成两行、启动页底部提示改为两行并把窗口高度从 486 调到 512。
+- 离屏演示支持 `--lang zh|en`，`LoadDemoSettings()` 会把演示用配置的语言与目标 API 预设同步到当前渲染语言，用于生成中英文截图。
+
+## 12. 目标 API（中国站 / 国际站）
+
+DeepSeek 官方对国内与海外账号使用同一个 API 端点 `https://api.deepseek.com`，因此「目标 API」不是协议切换，而是**部署/账号区域预设**：
+
+| 预设 | `baseUrl` | 开放平台 | 文档 | 官网 |
+|---|---|---|---|---|
+| `cn` 中国站 | `https://api.deepseek.com` | `https://platform.deepseek.com/` | `https://api-docs.deepseek.com/zh-cn/` | `https://www.deepseek.com/` |
+| `intl` 国际站 | `https://api.deepseek.com` | `https://platform.deepseek.com/` | `https://api-docs.deepseek.com/` | `https://www.deepseek.com/en/` |
+
+- 默认规则：`api.site` 为空或非法时，按界面语言取默认（中文 → `cn`，其它 → `intl`），由 `AppSettings.Normalize()` 落盘。
+- 设置页切换预设会把 Base URL 重置为该预设值（当前两站相同），并在「目标 API」下方提供「开放平台 / API 文档 / 官网」三个跳转链接；Base URL 仍可手工覆盖，切换语言不会覆盖用户手动改过的站点选择（`SettingsWindow._siteTouched` 启发式）。
+- 若未来官方拆分区域端点，只需修改 `ApiSites` 中的 `BaseUrl` 常量，界面与归一化逻辑无需改动。

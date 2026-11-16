@@ -5,6 +5,7 @@ namespace GameTrans.Core;
 
 public sealed class AppSettings
 {
+    public UiOptions Ui { get; set; } = new();
     public ApiOptions Api { get; set; } = new();
     public PromptOptions Prompt { get; set; } = new();
     public OverlayOptions Overlay { get; set; } = new();
@@ -23,6 +24,10 @@ public sealed class AppSettings
     /// <summary>夹紧取值范围，避免手改配置文件后崩溃。</summary>
     public void Normalize()
     {
+        Ui.Language = Loc.NormalizeLanguage(Ui.Language);
+        Api.Site = ApiSites.Normalize(Api.Site, Ui.Language);
+        if (string.IsNullOrWhiteSpace(Api.BaseUrl) || Api.BaseUrl.Trim().Equals("https://api.deepseek.com", StringComparison.OrdinalIgnoreCase))
+            Api.BaseUrl = ApiSites.Resolve(Api.Site).BaseUrl;
         Api.BaseUrl = string.IsNullOrWhiteSpace(Api.BaseUrl) ? "https://api.deepseek.com" : Api.BaseUrl.Trim();
         Api.Model = string.IsNullOrWhiteSpace(Api.Model) ? "deepseek-flash" : Api.Model.Trim();
         Api.MaxTokens = Math.Clamp(Api.MaxTokens, 64, 8192);
@@ -31,9 +36,13 @@ public sealed class AppSettings
         if (Api.Detail is not ("high" or "low" or "original" or "auto")) Api.Detail = "high";
 
         if (string.IsNullOrWhiteSpace(Prompt.GameName)) Prompt.GameName = "战狗";
-        if (string.IsNullOrWhiteSpace(Prompt.TargetLanguage)) Prompt.TargetLanguage = "中文（简体）";
-        if (string.IsNullOrWhiteSpace(Prompt.InputSourceLanguage)) Prompt.InputSourceLanguage = "中文（简体）";
-        if (string.IsNullOrWhiteSpace(Prompt.InputTargetLanguage)) Prompt.InputTargetLanguage = "English";
+        Prompt.SourceLanguage = Languages.NormalizeSource(Prompt.SourceLanguage);
+        Prompt.TargetLanguage = Languages.NormalizeTarget(Prompt.TargetLanguage);
+        Prompt.InputSourceLanguage = Languages.NormalizeSource(Prompt.InputSourceLanguage);
+        Prompt.InputTargetLanguage = Languages.NormalizeTarget(Prompt.InputTargetLanguage);
+        if (string.IsNullOrWhiteSpace(Prompt.TargetLanguage)) Prompt.TargetLanguage = Languages.Chinese;
+        if (string.IsNullOrWhiteSpace(Prompt.InputSourceLanguage)) Prompt.InputSourceLanguage = Languages.Chinese;
+        if (string.IsNullOrWhiteSpace(Prompt.InputTargetLanguage)) Prompt.InputTargetLanguage = Languages.English;
         Prompt.Glossary ??= new List<GlossaryEntry>();
         Prompt.Glossary = Prompt.Glossary
             .Where(g => g != null && !string.IsNullOrWhiteSpace(g.Term))
@@ -44,7 +53,7 @@ public sealed class AppSettings
             g.Term = g.Term.Trim();
             g.Meaning = (g.Meaning ?? "").Trim();
         }
-        if (string.IsNullOrWhiteSpace(Prompt.SourceLanguage)) Prompt.SourceLanguage = "auto";
+        if (string.IsNullOrWhiteSpace(Prompt.SourceLanguage)) Prompt.SourceLanguage = Languages.Auto;
         if (Prompt.OutputMode is not ("translated" or "bilingual" or "ocr")) Prompt.OutputMode = "translated";
 
         Overlay.BgColor = ColorUtil.NormalizeHex(Overlay.BgColor, "#0B0B0F");
@@ -68,8 +77,17 @@ public sealed class AppSettings
     }
 }
 
+public sealed class UiOptions
+{
+    /// <summary>界面语言：zh=简体中文，en=English。</summary>
+    public string Language { get; set; } = Loc.Chinese;
+}
+
 public sealed class ApiOptions
 {
+    /// <summary>目标 API 预设：cn=DeepSeek 中国站，intl=DeepSeek 国际站；空值按界面语言取默认。</summary>
+    public string Site { get; set; } = "";
+
     public string BaseUrl { get; set; } = "https://api.deepseek.com";
     public string Model { get; set; } = "deepseek-flash";
 
@@ -89,17 +107,17 @@ public sealed class PromptOptions
     /// <summary>目标游戏，会写进提示词，用于术语与语气。</summary>
     public string GameName { get; set; } = "战狗";
 
-    /// <summary>auto 或具体语言名。</summary>
-    public string SourceLanguage { get; set; } = "auto";
+    /// <summary>auto 或具体语言代码（zh/en/ko/ja）。</summary>
+    public string SourceLanguage { get; set; } = Languages.Auto;
 
     /// <summary>画面翻译的目标语言（默认中文）。</summary>
-    public string TargetLanguage { get; set; } = "中文（简体）";
+    public string TargetLanguage { get; set; } = Languages.Chinese;
 
     /// <summary>F9 输入翻译的源语言（默认中文）。</summary>
-    public string InputSourceLanguage { get; set; } = "中文（简体）";
+    public string InputSourceLanguage { get; set; } = Languages.Chinese;
 
     /// <summary>F9 输入翻译的目标语言（默认英文）。</summary>
-    public string InputTargetLanguage { get; set; } = "English";
+    public string InputTargetLanguage { get; set; } = Languages.English;
 
     /// <summary>黑话/术语对照表，注入提示词作为翻译依据。</summary>
     public List<GlossaryEntry> Glossary { get; set; } = new();
@@ -225,9 +243,9 @@ public static class KeyName
 
     public static string VkName(uint vk) => vk switch
     {
-        0x04 => "鼠标中键",
-        0x05 => "鼠标侧键1",
-        0x06 => "鼠标侧键2",
+        0x04 => Loc.T("鼠标中键", "Mouse Middle"),
+        0x05 => Loc.T("鼠标侧键1", "Mouse Side 1"),
+        0x06 => Loc.T("鼠标侧键2", "Mouse Side 2"),
         0x08 => "Backspace",
         0x09 => "Tab",
         0x0D => "Enter",

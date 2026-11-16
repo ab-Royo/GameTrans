@@ -54,13 +54,13 @@ public sealed class HotkeyManager : IDisposable
         Unregister();
         var errors = new List<string>();
 
-        _translateRegistered = RegisterOne(IdTranslate, translateMods, translateVk, "翻译",
+        _translateRegistered = RegisterOne(IdTranslate, translateMods, translateVk, Loc.T("翻译", "Translate"),
             () => TranslatePressed?.Invoke(), errors);
-        _inputRegistered = RegisterOne(IdInput, inputMods, inputVk, "输入",
+        _inputRegistered = RegisterOne(IdInput, inputMods, inputVk, Loc.T("输入", "Input"),
             () => InputPressed?.Invoke(), errors);
 
         SyncMouseWatch();
-        message = string.Join("；", errors);
+        message = string.Join(Loc.T("；", "; "), errors);
         return errors.Count == 0;
     }
 
@@ -70,7 +70,8 @@ public sealed class HotkeyManager : IDisposable
         {
             if (_mouseBindings.Any(b => b.Vk == vk && b.Mods == mods))
             {
-                errors.Add($"{label}热键 {KeyName.Format(mods, vk)} 与另一个热键重复");
+                errors.Add(Loc.F("{0}热键 {1} 与另一个热键重复", "{0} hotkey {1} duplicates another binding",
+                    label, KeyName.Format(mods, vk)));
                 return false;
             }
 
@@ -86,7 +87,10 @@ public sealed class HotkeyManager : IDisposable
         }
 
         bool ok = Win32.RegisterHotKey(_source.Handle, id, mods | Win32.MOD_NOREPEAT, vk);
-        if (!ok) errors.Add($"{label}热键 {KeyName.Format(mods, vk)} 注册失败（可能被占用）");
+        if (!ok)
+            errors.Add(Loc.F("{0}热键 {1} 注册失败（可能被占用）",
+                "{0} hotkey {1} could not be registered (already in use)",
+                label, KeyName.Format(mods, vk)));
         return ok;
     }
 

@@ -35,6 +35,7 @@ internal static class SelfTest
             {
                 failures++;
                 log.AppendLine($"[FAIL] {name}: {ex.GetType().Name}: {ex.Message}");
+                log.AppendLine("       " + (ex.StackTrace ?? "").Replace(Environment.NewLine, Environment.NewLine + "       "));
             }
         }
 
@@ -48,12 +49,130 @@ internal static class SelfTest
             if (s.Overlay.BgOpacity > 1.0) throw new Exception("BgOpacity 未夹紧");
             if (s.Api.MaxTokens > 8192) throw new Exception("MaxTokens 未夹紧");
             if (!s.Overlay.BgColor.StartsWith('#')) throw new Exception("颜色未归一化: " + s.Overlay.BgColor);
+            if (s.Ui.Language != Loc.Chinese) throw new Exception("默认界面语言应为中文");
+            if (s.Api.Site != ApiSites.China) throw new Exception("中文界面默认目标 API 应为中国站");
+            if (s.Prompt.TargetLanguage != Languages.Chinese) throw new Exception("默认目标语言应为中文");
+            if (s.Prompt.SourceLanguage != Languages.Auto) throw new Exception("默认源语言应为 auto");
+            if (s.Prompt.InputTargetLanguage != Languages.English) throw new Exception("F9 默认目标语言应为英文");
 
             var json = JsonSerializer.Serialize(s, AppSettings.JsonOpts);
             var back = JsonSerializer.Deserialize<AppSettings>(json, AppSettings.JsonOpts)
                        ?? throw new Exception("反序列化失败");
             if (Math.Abs(back.Overlay.BgOpacity - s.Overlay.BgOpacity) > 1e-9) throw new Exception("往返不一致");
+            if (back.Ui.Language != s.Ui.Language || back.Api.Site != s.Api.Site) throw new Exception("语言/站点未往返");
             File.WriteAllText(Path.Combine(outDir, "settings.sample.json"), json);
+        });
+
+        Step("界面语言与本地化", () =>
+        {
+            try
+            {
+                Loc.SetLanguage(Loc.Chinese);
+                if (Loc.IsEnglish || Loc.T("保存", "Save") != "保存") throw new Exception("中文文案异常");
+                if (Languages.Display(Languages.Chinese) != "中文") throw new Exception("中文语言名异常");
+                if (Languages.Display(Languages.Japanese) != "日文") throw new Exception("日文语言名异常");
+
+                Loc.SetLanguage(Loc.English);
+                if (!Loc.IsEnglish || Loc.T("保存", "Save") != "Save") throw new Exception("英文文案异常");
+                if (Languages.Display(Languages.Chinese) != "Chinese") throw new Exception("英文语言名异常");
+                if (Languages.Display(Languages.Korean) != "Korean") throw new Exception("韩文语言名异常");
+                if (Languages.Display(Languages.Auto) != "Auto") throw new Exception("自动语言名异常");
+                if (!Loc.NativeName(Loc.English).StartsWith("English", StringComparison.Ordinal)) throw new Exception("语言切换项异常");
+
+                var en = new AppSettings();
+                en.Ui.Language = Loc.English;
+                en.Normalize();
+                if (en.Ui.Language != Loc.English) throw new Exception("英文界面语言未生效");
+                if (en.Api.Site != ApiSites.International) throw new Exception("英文界面默认目标 API 应为国际站");
+
+                File.WriteAllText(Path.Combine(outDir, "i18n.sample.txt"),
+                    "zh: " + Loc.T("保存", "Save") + "\n" +
+                    "en: Save\n" +
+                    "language zh -> " + Loc.NativeName(Loc.Chinese) + ", en -> " + Loc.NativeName(Loc.English));
+            }
+            finally
+            {
+                Loc.SetLanguage(Loc.Chinese);
+            }
+        });
+
+        Step("语言代码归一化", () =>
+        {
+            var s = new AppSettings();
+            s.Prompt.SourceLanguage = "自动识别";
+            s.Prompt.TargetLanguage = "中文（简体）";
+            s.Prompt.InputSourceLanguage = "中文";
+            s.Prompt.InputTargetLanguage = "English";
+            s.Normalize();
+            if (s.Prompt.SourceLanguage != "auto") throw new Exception("旧源语言未归一化: " + s.Prompt.SourceLanguage);
+            if (s.Prompt.TargetLanguage != "zh") throw new Exception("旧目标语言未归一化: " + s.Prompt.TargetLanguage);
+            if (s.Prompt.InputSourceLanguage != "zh") throw new Exception("旧输入源语言未归一化");
+            if (s.Prompt.InputTargetLanguage != "en") throw new Exception("旧输入目标语言未归一化");
+
+            var t = new AppSettings();
+            t.Prompt.TargetLanguage = "auto";
+            t.Prompt.SourceLanguage = "日语";
+            t.Prompt.InputTargetLanguage = "韩语";
+            t.Normalize();
+            if (t.Prompt.TargetLanguage != "zh") throw new Exception("目标语言不允许 auto");
+            if (t.Prompt.SourceLanguage != "ja") throw new Exception("日语未归一化");
+            if (t.Prompt.InputTargetLanguage != "ko") throw new Exception("韩语未归一化");
+
+            foreach (var code in Languages.TargetCodes)
+            {
+                if (!new[] { "zh", "en", "ko", "ja" }.Contains(code)) throw new Exception("目标语言集合异常: " + code);
+            }
+
+            if (Languages.TargetCodes.Length != 4) throw new Exception("目标语言应为 4 种");
+            if (Languages.SourceCodes.Length != 5) throw new Exception("源语言应为 auto + 4 种");
+        });
+
+        Step("目标 API 预设与链接", () =>
+        {
+            var cn = ApiSites.DefaultFor(Loc.Chinese);
+            var intl = ApiSites.DefaultFor(Loc.English);
+            if (cn.Code != ApiSites.China) throw new Exception("中文默认站点异常");
+            if (intl.Code != ApiSites.International) throw new Exception("英文默认站点异常");
+            if (cn.BaseUrl != "https://api.deepseek.com") throw new Exception("中国站 Base URL 异常");
+            if (intl.BaseUrl != "https://api.deepseek.com") throw new Exception("国际站 Base URL 异常");
+            if (!cn.PlatformUrl.StartsWith("https://platform.deepseek.com", StringComparison.Ordinal))
+                throw new Exception("开放平台链接异常");
+            if (!Uri.TryCreate(cn.DocsUrl, UriKind.Absolute, out _) ||
+                !Uri.TryCreate(intl.DocsUrl, UriKind.Absolute, out _))
+                throw new Exception("文档链接异常");
+
+            var s = new AppSettings { Api = { Site = "intl" } };
+            s.Normalize();
+            if (ApiSites.Resolve(s.Api.Site).Code != ApiSites.International) throw new Exception("站点配置未保留");
+
+            var unknown = new AppSettings { Api = { Site = "zzz" } };
+            unknown.Normalize();
+            if (unknown.Api.Site != ApiSites.China) throw new Exception("未知站点未回退");
+
+            File.WriteAllText(Path.Combine(outDir, "api-sites.sample.txt"),
+                $"cn: {cn.BaseUrl} | {cn.PlatformUrl} | {cn.DocsUrl}\n" +
+                $"intl: {intl.BaseUrl} | {intl.PlatformUrl} | {intl.DocsUrl}\n");
+        });
+
+        Step("设置页就地切换语言", () =>
+        {
+            try
+            {
+                var s = new AppSettings();
+                s.Normalize();
+                var w = new SettingsWindow(s, _ => { });
+                w.SelectLanguageForTest(Loc.English);
+                if (!Loc.IsEnglish) throw new Exception("设置页未切到英文");
+                if (w.Title != "GameTrans Settings") throw new Exception("设置页标题未本地化: " + w.Title);
+                w.SelectLanguageForTest(Loc.Chinese);
+                if (Loc.IsEnglish) throw new Exception("设置页未切回中文");
+                if (w.Title != "GameTrans 设置") throw new Exception("设置页标题未还原: " + w.Title);
+                w.Close();
+            }
+            finally
+            {
+                Loc.SetLanguage(Loc.Chinese);
+            }
         });
 
         var vs = ScreenCapture.VirtualScreen();
@@ -198,6 +317,13 @@ internal static class SelfTest
             var textSys = Prompts.TextSystem(textSettings);
             if (!textSys.Contains("只输出译文正文")) throw new Exception("F9 提示词异常");
             File.WriteAllText(Path.Combine(outDir, "prompt.text.txt"), textSys);
+
+            var ja = new AppSettings();
+            ja.Prompt.TargetLanguage = "ja";
+            ja.Prompt.InputTargetLanguage = "ko";
+            ja.Normalize();
+            if (!Prompts.System(ja).Contains("日语")) throw new Exception("日文目标语言未写入提示词");
+            if (!Prompts.TextSystem(ja).Contains("韩语")) throw new Exception("韩文目标语言未写入提示词");
         });
 
         Step("术语表提示词注入", () =>

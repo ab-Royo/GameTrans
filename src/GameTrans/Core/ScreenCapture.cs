@@ -35,10 +35,10 @@ public static class ScreenCapture
     /// <summary>以物理像素截取一块屏幕区域（CAPTUREBLT，含分层窗口/硬件覆盖层）。</summary>
     public static BitmapSource Capture(RegionPx r)
     {
-        if (!r.IsUsable) throw new ArgumentException("截图区域过小");
+        if (!r.IsUsable) throw new ArgumentException(Loc.T("截图区域过小", "Capture region is too small"));
 
         IntPtr screenDc = Win32.GetDC(IntPtr.Zero);
-        if (screenDc == IntPtr.Zero) throw new InvalidOperationException("GetDC 失败");
+        if (screenDc == IntPtr.Zero) throw new InvalidOperationException(Loc.T("GetDC 失败", "GetDC failed"));
 
         IntPtr memDc = IntPtr.Zero;
         IntPtr dib = IntPtr.Zero;
@@ -46,7 +46,7 @@ public static class ScreenCapture
         try
         {
             memDc = Win32.CreateCompatibleDC(screenDc);
-            if (memDc == IntPtr.Zero) throw new InvalidOperationException("CreateCompatibleDC 失败");
+            if (memDc == IntPtr.Zero) throw new InvalidOperationException(Loc.T("CreateCompatibleDC 失败", "CreateCompatibleDC failed"));
 
             var bmi = new Win32.BITMAPINFO
             {
@@ -63,12 +63,12 @@ public static class ScreenCapture
 
             dib = Win32.CreateDIBSection(memDc, ref bmi, 0, out IntPtr bits, IntPtr.Zero, 0);
             if (dib == IntPtr.Zero || bits == IntPtr.Zero)
-                throw new InvalidOperationException("CreateDIBSection 失败: " + Marshal.GetLastWin32Error());
+                throw new InvalidOperationException(Loc.T("CreateDIBSection 失败: ", "CreateDIBSection failed: ") + Marshal.GetLastWin32Error());
 
             oldObj = Win32.SelectObject(memDc, dib);
             if (!Win32.BitBlt(memDc, 0, 0, r.Width, r.Height, screenDc, r.Left, r.Top,
                     Win32.SRCCOPY | Win32.CAPTUREBLT))
-                throw new InvalidOperationException("BitBlt 失败: " + Marshal.GetLastWin32Error());
+                throw new InvalidOperationException(Loc.T("BitBlt 失败: ", "BitBlt failed: ") + Marshal.GetLastWin32Error());
 
             int stride = r.Width * 4;
             var buffer = new byte[stride * r.Height];

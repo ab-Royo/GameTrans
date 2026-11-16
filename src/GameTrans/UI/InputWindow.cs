@@ -42,7 +42,7 @@ public sealed class InputWindow : Window
         ResizeMode = ResizeMode.NoResize;
         SizeToContent = SizeToContent.Manual;
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Title = "GameTrans 输入翻译";
+        Title = Loc.T("GameTrans 输入翻译", "GameTrans Input Translation");
 
         _input = new TextBox
         {
@@ -70,8 +70,8 @@ public sealed class InputWindow : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
 
-        _sendBtn = Theme.Btn("翻译", () => _ = TranslateAsync(), true);
-        var closeBtn = Theme.Btn("关闭", Close);
+        _sendBtn = Theme.Btn(Loc.T("翻译", "Translate"), () => _ = TranslateAsync(), true);
+        var closeBtn = Theme.Btn(Loc.T("关闭", "Close"), Close);
 
         var card = new Border
         {
@@ -95,7 +95,7 @@ public sealed class InputWindow : Window
                 {
                     new TextBlock
                     {
-                        Text = $"输入文本　{_settings.Prompt.InputSourceLanguage} → {_settings.Prompt.InputTargetLanguage}",
+                        Text = Loc.F("输入文本　{0} → {1}", "Input text  {0} → {1}", Languages.Display(_settings.Prompt.InputSourceLanguage), Languages.Display(_settings.Prompt.InputTargetLanguage)),
                         FontFamily = Theme.Font,
                         FontSize = 12,
                         Foreground = Theme.Sub,
@@ -165,7 +165,7 @@ public sealed class InputWindow : Window
 
         _input.Focus();
         Keyboard.Focus(_input);
-        _status.Text = $"Enter 翻译　·　Esc 关闭　·　{_settings.Api.Model}";
+        _status.Text = Loc.F("Enter 翻译　·　Esc 关闭　·　{0}", "Enter to translate  ·  Esc to close  ·  {0}", _settings.Api.Model);
         Log.Info($"input pos: scale={scale:F3} region={_region.Width}x{_region.Height} " +
                  $"size={Width:F0}x{Height:F0} at ({Left:F0},{Top:F0})");
     }
@@ -199,7 +199,7 @@ public sealed class InputWindow : Window
     {
         bool copied = CopyToClipboard(_input.Text);
         if (!copied && !_copied)
-            ToastWindow.ShowToast("剪贴板被其他程序占用，未能复制译文", true);
+            ToastWindow.ShowToast(Loc.T("剪贴板被其他程序占用，未能复制译文", "Clipboard is busy; the translation was not copied"), true);
         Close();
     }
 
@@ -210,7 +210,7 @@ public sealed class InputWindow : Window
         var text = _input.Text.Trim();
         if (text.Length == 0)
         {
-            _status.Text = "请输入待翻译文本";
+            _status.Text = Loc.T("请输入待翻译文本", "Enter text to translate");
             _input.Focus();
             return;
         }
@@ -226,7 +226,7 @@ public sealed class InputWindow : Window
         _sendBtn.IsEnabled = false;
         _input.IsReadOnly = true;
         _status.Foreground = Theme.Sub;
-        _status.Text = "翻译中…";
+        _status.Text = Loc.T("翻译中…", "Translating…");
 
         try
         {
@@ -234,7 +234,7 @@ public sealed class InputWindow : Window
             if (!r.Ok)
             {
                 _status.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
-                _status.Text = r.Error ?? "翻译失败";
+                _status.Text = r.Error ?? Loc.T("翻译失败", "Translation failed");
                 return;
             }
 
@@ -247,18 +247,18 @@ public sealed class InputWindow : Window
             _status.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0xE0, 0x9E));
             if (copied)
             {
-                _status.Text = $"已复制到剪贴板，3 秒后自动关闭；Enter 立即关闭 · {r.ElapsedMs} ms";
+                _status.Text = Loc.F("已复制到剪贴板，3 秒后自动关闭；Enter 立即关闭 · {0} ms", "Copied to clipboard; closes in 3 s, Enter closes now · {0} ms", r.ElapsedMs);
                 ArmAutoClose();
             }
             else if (_settings.Behavior.CopyInputResult)
             {
                 // 剪贴板被其他程序占用：不静默失败，也不自动关闭，交给用户再按 Enter 重试或点关闭
                 _status.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x6B));
-                _status.Text = $"剪贴板被占用，未能复制；Enter 重试复制并关闭 · {r.ElapsedMs} ms";
+                _status.Text = Loc.F("剪贴板被占用，未能复制；Enter 重试复制并关闭 · {0} ms", "Clipboard busy; not copied. Enter retries and closes · {0} ms", r.ElapsedMs);
             }
             else
             {
-                _status.Text = $"翻译完成；Enter 复制并关闭 · {r.ElapsedMs} ms";
+                _status.Text = Loc.F("翻译完成；Enter 复制并关闭 · {0} ms", "Translation done; Enter copies and closes · {0} ms", r.ElapsedMs);
             }
         }
         finally

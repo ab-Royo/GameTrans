@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
 $out = Join-Path (Split-Path $PSScriptRoot -Parent) 'src\GameTrans\app.ico'

@@ -25,7 +25,7 @@ public sealed class DropDown : Button
         Value = _items.Contains(selected) ? selected : (_items.FirstOrDefault() ?? "");
 
         Content = Value + "   ▾";
-        Width = width;
+        MinWidth = width;
         HorizontalContentAlignment = HorizontalAlignment.Left;
         Padding = new Thickness(10, 6, 10, 6);
         FontFamily = Theme.Font;

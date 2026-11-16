@@ -27,7 +27,7 @@ public sealed class GlossaryWindow : Window
     public GlossaryWindow(List<GlossaryEntry>? current)
     {
         WindowStyle = WindowStyle.SingleBorderWindow;
-        Title = "GameTrans 术语 / 黑话对照表";
+        Title = Loc.T("GameTrans 术语 / 黑话对照表", "GameTrans Glossary");
         Width = 760;
         Height = 620;
         MinWidth = 620;
@@ -42,11 +42,14 @@ public sealed class GlossaryWindow : Window
         _count = Theme.L( "", 12, Theme.Sub);
 
         var head = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 0, 0, 10) };
-        head.Children.Add(Theme.L("术语 / 黑话对照表", 16, Theme.Text, true));
+        head.Children.Add(Theme.L(Loc.T("术语 / 黑话对照表", "Glossary / Slang"), 16, Theme.Text, true));
         head.Children.Add(new Border { Height = 8 });
         head.Children.Add(Theme.L(
-            "左列为游戏内出现的词条（缩写、黑话、道具或点位名称），右列为该词条在游戏语境中的实际含义。\n" +
-            "本表随提示词一并发送给模型；超过 60 项时仅前 60 项参与推理。",
+            Loc.T(
+                "左列为游戏内出现的词条（缩写、黑话、道具或点位名称），右列为该词条在游戏语境中的实际含义。\n" +
+                "本表随提示词一并发送给模型；超过 60 项时仅前 60 项参与推理。",
+                "The left column is a term as it appears in game (abbreviation, slang, item or location name); the right column is what it actually means in game context.\n" +
+                "The glossary is sent with the prompt; only the first 60 entries are used."),
             12, Theme.Sub));
 
         var listBox = new Border
@@ -63,9 +66,9 @@ public sealed class GlossaryWindow : Window
             },
         };
 
-        var addBtn = Theme.Btn("添加词条", AddRow, false, 110);
+        var addBtn = Theme.Btn(Loc.T("添加词条", "Add entry"), AddRow, false, 110);
 
-        var clearBtn = Theme.Btn("清空", () =>
+        var clearBtn = Theme.Btn(Loc.T("清空", "Clear"), () =>
         {
             _rows.Clear();
             _list.Children.Clear();
@@ -74,7 +77,7 @@ public sealed class GlossaryWindow : Window
 
         _batch = Theme.T("", double.NaN, true, 4);
         _batch.FontFamily = Theme.Mono;
-        var importBtn = Theme.Btn("导入", ImportBatch, true, 110);
+        var importBtn = Theme.Btn(Loc.T("导入", "Import"), ImportBatch, true, 110);
         _batchPanel = new Border
         {
             Background = Theme.CardBg,
@@ -89,7 +92,7 @@ public sealed class GlossaryWindow : Window
                 Orientation = Orientation.Vertical,
                 Children =
                 {
-                    Theme.L("每行一个词条，格式：词条=含义（亦支持 Tab 或 | 分隔）", 12, Theme.Sub),
+                    Theme.L(Loc.T("每行一个词条，格式：词条=含义（亦支持 Tab 或 | 分隔）", "One entry per line: term=meaning (Tab or | also accepted)"), 12, Theme.Sub),
                     new Border { Height = 6 },
                     _batch,
                     new Border { Height = 8 },
@@ -103,11 +106,11 @@ public sealed class GlossaryWindow : Window
             },
         };
 
-        var batchBtn = Theme.Btn("批量导入", () => _batchPanel.Visibility =
+        var batchBtn = Theme.Btn(Loc.T("批量导入", "Batch import"), () => _batchPanel.Visibility =
             _batchPanel.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible, false, 96);
 
-        var saveBtn = Theme.Btn("保存", Save, true, 96);
-        var cancelBtn = Theme.Btn("取消", Close, false, 96);
+        var saveBtn = Theme.Btn(Loc.T("保存", "Save"), Save, true, 96);
+        var cancelBtn = Theme.Btn(Loc.T("取消", "Cancel"), Close, false, 96);
 
         var bottom = new Border
         {
@@ -173,13 +176,13 @@ public sealed class GlossaryWindow : Window
 
         var termBox = Theme.T(term, double.NaN);
         termBox.FontFamily = Theme.Mono;
-        termBox.ToolTip = "游戏内出现的词条，例如 GG、push、first blood";
+        termBox.ToolTip = Loc.T("游戏内出现的词条，例如 GG、push、first blood", "A term as it appears in game, e.g. GG, push, first blood");
         var eq = Theme.L("=", 13, Theme.Sub);
         eq.HorizontalAlignment = HorizontalAlignment.Center;
         var meanBox = Theme.T(meaning, double.NaN);
-        meanBox.ToolTip = "该词条在游戏语境中的含义，例如“比赛结束时的致意用语”";
+        meanBox.ToolTip = Loc.T("该词条在游戏语境中的含义，例如“比赛结束时的致意用语”", "What it means in game context, e.g. a greeting at the end of a match");
 
-        var del = Theme.Btn("删除", () =>
+        var del = Theme.Btn(Loc.T("删除", "Delete"), () =>
         {
             _list.Children.Remove(g);
             _rows.RemoveAll(r => ReferenceEquals(r.Root, g));
@@ -206,7 +209,7 @@ public sealed class GlossaryWindow : Window
     private void RefreshCount()
     {
         int n = _rows.Count(r => !string.IsNullOrWhiteSpace(r.Term.Text));
-        _count.Text = $"已填写 {n} 项（上限 60 项参与推理）";
+        _count.Text = Loc.F("已填写 {0} 项（上限 60 项参与推理）", "{0} filled (max 60 used in the prompt)", n);
     }
 
     private void ImportBatch()
@@ -241,7 +244,7 @@ public sealed class GlossaryWindow : Window
 
         _batch.Text = "";
         _batchPanel.Visibility = Visibility.Collapsed;
-        ToastWindow.ShowToast($"已导入 {ok} 项" + (bad > 0 ? $"；{bad} 行格式无效，已跳过" : ""),
+        ToastWindow.ShowToast(Loc.F("已导入 {0} 项", "Imported {0} entries", ok) + (bad > 0 ? Loc.F("；{0} 行格式无效，已跳过", "; {0} invalid lines skipped", bad) : ""),
             bad > 0);
     }
 

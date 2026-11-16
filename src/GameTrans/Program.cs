@@ -11,6 +11,8 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        ApplyLanguageArg(args);
+
         if (args.Any(a => a.Equals("--selftest", StringComparison.OrdinalIgnoreCase)))
             return SelfTest.Run(args);
 
@@ -51,12 +53,13 @@ public static class Program
         if (!createdNew)
         {
             // 已有实例：提示后退出（不弹窗打扰）
-            UI.ToastWindow.ShowToast("GameTrans 已在运行，请查看系统托盘");
+            UI.ToastWindow.ShowToast(Core.Loc.T("GameTrans 已在运行，请查看系统托盘", "GameTrans is already running; check the system tray"));
             Thread.Sleep(1200);
             return 0;
         }
 
         var settings = SettingsStore.Load();
+        Loc.SetLanguage(settings.Ui.Language);
         Log.Info($"启动 v{Core.AppInfo.Version} · 配置目录 {SettingsStore.DataDir} · 区域 {settings.Region.Width}x{settings.Region.Height}");
 
         var app = new Application
@@ -67,7 +70,7 @@ public static class Program
         app.DispatcherUnhandledException += (_, e) =>
         {
             Log.Error("未处理异常：" + e.Exception);
-            UI.ToastWindow.ShowToast("运行异常：" + e.Exception.Message, true);
+            UI.ToastWindow.ShowToast(Core.Loc.T("运行异常：", "Runtime error: ") + e.Exception.Message, true);
             e.Handled = true;
         };
 
@@ -80,12 +83,47 @@ public static class Program
             catch (Exception ex)
             {
                 Log.Error("启动失败：" + ex);
-                MessageBox.Show("GameTrans 启动失败：\n" + ex.Message, "GameTrans");
+                MessageBox.Show(Core.Loc.T("GameTrans 启动失败：\n", "GameTrans failed to start:\n") + ex.Message, "GameTrans");
                 app.Shutdown();
             }
         };
 
         return app.Run();
+    }
+
+    /// <summary>解析 --lang zh|en（供离屏截图与自检按指定语言渲染），缺省保持当前语言。</summary>
+    private static void ApplyLanguageArg(string[] args)
+    {
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i].Equals("--lang", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                Loc.SetLanguage(args[i + 1]);
+                return;
+            }
+
+            if (args[i].StartsWith("--lang=", StringComparison.OrdinalIgnoreCase))
+            {
+                Loc.SetLanguage(args[i]["--lang=".Length..]);
+                return;
+            }
+        }
+    }
+
+    /// <summary>调试/截图用：读取配置并把界面语言与目标 API 预设切到当前渲染语言。</summary>
+    private static AppSettings LoadDemoSettings()
+    {
+        var s = SettingsStore.Load();
+        if (!string.Equals(s.Ui.Language, Loc.Language, StringComparison.Ordinal))
+        {
+            s.Ui.Language = Loc.Language;
+            var site = ApiSites.DefaultFor(Loc.Language);
+            s.Api.Site = site.Code;
+            s.Api.BaseUrl = site.BaseUrl;
+        }
+
+        s.Normalize();
+        return s;
     }
 
     /// <summary>调试：显示 F9 输入窗并离屏渲染，检查布局。</summary>
@@ -98,7 +136,7 @@ public static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Startup += (_, _) =>
         {
-            var s = Core.SettingsStore.Load();
+            var s = LoadDemoSettings();
             var vs = Core.ScreenCapture.VirtualScreen();
             var region = new Core.RegionPx(vs.Left + vs.Width / 2 - 400, vs.Top + vs.Height / 2,
                 vs.Left + vs.Width / 2 + 400, vs.Top + vs.Height / 2 + 300);
@@ -162,7 +200,7 @@ public static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Startup += (_, _) =>
         {
-            var s = Core.SettingsStore.Load();
+            var s = LoadDemoSettings();
             s.Normalize();
             var vs = Core.ScreenCapture.VirtualScreen();
             var region = new Core.RegionPx(vs.Left + 60, vs.Top + 40, vs.Left + 60 + w, vs.Top + 40 + h);
@@ -269,7 +307,7 @@ public static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Startup += (_, _) =>
         {
-            var s = Core.SettingsStore.Load();
+            var s = LoadDemoSettings();
             Window w = kind == "startup"
                 ? new UI.StartupWindow(s, () => { }, () => { }, () => { }, _ => { })
                 : new UI.GlossaryWindow(s.Prompt.Glossary);
@@ -332,7 +370,7 @@ public static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Startup += (_, _) =>
         {
-            var s = Core.SettingsStore.Load();
+            var s = LoadDemoSettings();
             var w = new UI.SettingsWindow(s, _ => { });
             w.Show();
 
@@ -356,9 +394,20 @@ public static class Program
                     root.UpdateLayout();
                     int cw = (int)Math.Ceiling(root.ActualWidth);
                     int ch = (int)Math.Ceiling(root.ActualHeight);
-                    var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(cw, ch, 96, 96,
+                    int pad = 16; // root 自身 Margin，单独渲染会丢失，这里补上四周留白
+                    var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(cw + pad * 2, ch + pad * 2, 96, 96,
                         System.Windows.Media.PixelFormats.Pbgra32);
-                    rtb.Render(root);
+                    var dv = new System.Windows.Media.DrawingVisual();
+                    using (var dc = dv.RenderOpen())
+                    {
+                        dc.DrawRectangle(new System.Windows.Media.SolidColorBrush(
+                                System.Windows.Media.Color.FromRgb(0x15, 0x16, 0x1A)), null,
+                            new Rect(0, 0, cw + pad * 2, ch + pad * 2));
+                        dc.DrawRectangle(new System.Windows.Media.VisualBrush(root), null,
+                            new Rect(pad, pad, cw, ch));
+                    }
+
+                    rtb.Render(dv);
                     var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
                     enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
                     using (var fs = System.IO.File.Create(outPath)) enc.Save(fs);
@@ -397,11 +446,13 @@ public static class Program
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Startup += (_, _) =>
         {
-            var settings = Core.SettingsStore.Load();
+            var settings = LoadDemoSettings();
             var region = new Core.RegionPx(x, y, x + w, y + h);
             var overlay = new UI.OverlayWindow();
             overlay.ShowText(region, settings,
-                "示例：敌方五人推中，先别开团，等我绕后。\nOur mid lane is pushing, don't engage yet.",
+                Core.Loc.T(
+                    "示例：敌方五人推中，先别开团，等我绕后。\nOur mid lane is pushing, don't engage yet.",
+                    "Example: The enemy is pushing mid with five, don't engage yet, wait for me to flank."),
                 "128 ms · deepseek-flash");
 
             var hwnd = new System.Windows.Interop.WindowInteropHelper(overlay).Handle;

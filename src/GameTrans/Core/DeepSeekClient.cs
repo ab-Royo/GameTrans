@@ -32,8 +32,9 @@ public sealed class DeepSeekClient
     public async Task<TranslationResult> TranslateImageAsync(byte[] png, AppSettings s, string apiKey,
         CancellationToken ct)
     {
-        if (png is null || png.Length == 0) return TranslationResult.Fail("截图为空");
-        if (string.IsNullOrWhiteSpace(apiKey)) return TranslationResult.Fail("未配置 API Key，请到设置里填写");
+        if (png is null || png.Length == 0) return TranslationResult.Fail(Loc.T("截图为空", "Screenshot is empty"));
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return TranslationResult.Fail(Loc.T("未配置 API Key，请到设置里填写", "No API key configured. Open Settings to add one."));
 
         var b64 = Convert.ToBase64String(png);
         var content = new object[]
@@ -60,10 +61,12 @@ public sealed class DeepSeekClient
     public async Task<TranslationResult> TranslateTextAsync(string text, AppSettings s, string apiKey,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(text)) return TranslationResult.Fail("没有输入内容");
-        if (string.IsNullOrWhiteSpace(apiKey)) return TranslationResult.Fail("未配置 API Key，请到设置里填写");
+        if (string.IsNullOrWhiteSpace(text))
+            return TranslationResult.Fail(Loc.T("没有输入内容", "Nothing to translate"));
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return TranslationResult.Fail(Loc.T("未配置 API Key，请到设置里填写", "No API key configured. Open Settings to add one."));
 
-        // F9 输入翻译：中文 → 英文（方向由 Prompt.Input* 决定）
+        // F9 输入翻译：方向由 Prompt.Input* 决定（默认 中文 → 英文）
         var content = new object[]
         {
             new Dictionary<string, object?>
@@ -78,7 +81,8 @@ public sealed class DeepSeekClient
 
     public async Task<TranslationResult> TestAsync(AppSettings s, string apiKey, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(apiKey)) return TranslationResult.Fail("未配置 API Key");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return TranslationResult.Fail(Loc.T("未配置 API Key", "No API key configured"));
 
         const string probe = "请只回复两个字：正常";
         var content = new object[]
@@ -94,7 +98,7 @@ public sealed class DeepSeekClient
     {
         var sw = Stopwatch.StartNew();
         int attempt = 0;
-        TranslationResult last = TranslationResult.Fail("未知错误");
+        TranslationResult last = TranslationResult.Fail(Loc.T("未知错误", "Unknown error"));
 
         while (attempt < 2)
         {
@@ -141,7 +145,6 @@ public sealed class DeepSeekClient
                 {
                     var msg = ExtractError(raw) ?? $"HTTP {status}";
                     last = TranslationResult.Fail(msg, sw.ElapsedMilliseconds, status);
-
                     // 429/5xx 重试一次
                     if ((status == 429 || status >= 500) && attempt < 2)
                     {
@@ -154,26 +157,31 @@ public sealed class DeepSeekClient
 
                 var text = ExtractContent(raw);
                 if (string.IsNullOrWhiteSpace(text))
-                    return TranslationResult.Fail("模型返回了空内容", sw.ElapsedMilliseconds, status);
+                    return TranslationResult.Fail(Loc.T("模型返回了空内容", "The model returned empty content"),
+                        sw.ElapsedMilliseconds, status);
 
                 return new TranslationResult(true, text.Trim(), null, sw.ElapsedMilliseconds, status);
             }
             catch (OperationCanceledException) when (outerCt.IsCancellationRequested)
             {
-                return TranslationResult.Fail("已取消", sw.ElapsedMilliseconds);
+                return TranslationResult.Fail(Loc.T("已取消", "Cancelled"), sw.ElapsedMilliseconds);
             }
             catch (OperationCanceledException)
             {
-                last = TranslationResult.Fail($"请求超时（{s.Api.TimeoutSeconds}s）", sw.ElapsedMilliseconds);
+                last = TranslationResult.Fail(
+                    Loc.F("请求超时（{0}s）", "Request timed out after {0}s", s.Api.TimeoutSeconds),
+                    sw.ElapsedMilliseconds);
             }
             catch (HttpRequestException ex)
             {
-                last = TranslationResult.Fail("网络错误：" + ex.Message, sw.ElapsedMilliseconds);
+                last = TranslationResult.Fail(Loc.T("网络错误：", "Network error: ") + ex.Message,
+                    sw.ElapsedMilliseconds);
             }
             catch (Exception ex)
             {
                 Log.Error("DeepSeek 请求异常: " + ex);
-                return TranslationResult.Fail("请求异常：" + ex.Message, sw.ElapsedMilliseconds);
+                return TranslationResult.Fail(Loc.T("请求异常：", "Request failed: ") + ex.Message,
+                    sw.ElapsedMilliseconds);
             }
 
             if (attempt < 2) await Task.Delay(700, outerCt).ConfigureAwait(false);

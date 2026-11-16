@@ -39,7 +39,7 @@ public sealed class RegionSelectorWindow : Window
 
     private readonly TextBlock _hint = new()
     {
-        Text = "拖动以框选识别区域　·　Enter 确认　·　Esc 取消",
+        Text = Loc.T("拖动以框选识别区域　·　Enter 确认　·　Esc 取消", "Drag to select the capture region  ·  Enter to confirm  ·  Esc to cancel"),
         Foreground = Brushes.White,
         FontFamily = Theme.Font,
         FontSize = 14,
@@ -74,25 +74,25 @@ public sealed class RegionSelectorWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
         Background = Brushes.Black;
         Cursor = Cursors.Cross;
-        Title = "GameTrans 选区";
+        Title = Loc.T("GameTrans 选区", "GameTrans Region Selector");
         UseLayoutRounding = true;
 
-        var cancel = MakeToolButton("取消", false, () =>
+        var cancel = MakeToolButton(Loc.T("取消", "Cancel"), false, () =>
         {
             Result = null;
             Close();
         });
-        var full = MakeToolButton("全屏", false, () =>
+        var full = MakeToolButton(Loc.T("全屏", "Full screen"), false, () =>
         {
             _sel = new Rect(0, 0, _dipWidth, _dipHeight);
             UpdateVisuals();
         });
-        var reselect = MakeToolButton("重选", false, () =>
+        var reselect = MakeToolButton(Loc.T("重选", "Reset"), false, () =>
         {
             _sel = Rect.Empty;
             UpdateVisuals();
         });
-        var ok = MakeToolButton("确定", true, Confirm);
+        var ok = MakeToolButton(Loc.T("确定", "OK"), true, Confirm);
 
         _toolbar = new Border
         {
@@ -375,7 +375,7 @@ public sealed class RegionSelectorWindow : Window
     {
         if (_sel.Width * _pxPerDip < 8 || _sel.Height * _pxPerDip < 8)
         {
-            _hint.Text = "选区尺寸过小（小于 8 × 8 像素），请重新框选";
+            _hint.Text = Loc.T("选区尺寸过小（小于 8 × 8 像素），请重新框选", "Selection too small (under 8 × 8 px); please select again");
             return;
         }
 

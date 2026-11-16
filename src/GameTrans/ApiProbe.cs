@@ -11,13 +11,16 @@ public static class ApiProbe
         var key = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "";
         var settings = SettingsStore.Load();
         settings.Normalize();
+        Loc.SetLanguage(settings.Ui.Language);
 
         var client = new DeepSeekClient();
         var result = client.TestAsync(settings, key, CancellationToken.None).GetAwaiter().GetResult();
 
         var line = result.Ok
-            ? $"API 探针成功 {result.ElapsedMs}ms model={settings.Api.Model} 返回={result.Text}"
-            : $"API 探针失败 {result.ElapsedMs}ms status={result.StatusCode} 错误={result.Error}";
+            ? Loc.F("API 探针成功 {0}ms model={1} 返回={2}", "API probe OK {0}ms model={1} reply={2}",
+                result.ElapsedMs, settings.Api.Model, result.Text)
+            : Loc.F("API 探针失败 {0}ms status={1} 错误={2}", "API probe failed {0}ms status={1} error={2}",
+                result.ElapsedMs, result.StatusCode, result.Error);
         Log.Info(line);
         Console.WriteLine(line);
         return result.Ok ? 0 : 1;
@@ -29,16 +32,17 @@ public static class ApiProbe
         var key = args.Length > 1 && !args[1].StartsWith("--") ? args[1].Trim() : "";
         if (key.Length == 0)
         {
-            Console.WriteLine("用法: GameTrans.exe --set-key <API_KEY>");
+            Console.WriteLine(Loc.T("用法: GameTrans.exe --set-key <API_KEY>", "Usage: GameTrans.exe --set-key <API_KEY>"));
             return 2;
         }
 
         var settings = SettingsStore.Load();
+        Loc.SetLanguage(settings.Ui.Language);
         SettingsStore.SaveApiKey(settings, key);
         SettingsStore.Save(settings);
 
         Log.Info($"API Key 已加密保存（长度 {key.Length}）");
-        Console.WriteLine("API Key 已加密保存到 " + SettingsStore.SettingsPath);
+        Console.WriteLine(Loc.T("API Key 已加密保存到 ", "API key encrypted and saved to ") + SettingsStore.SettingsPath);
         return string.IsNullOrEmpty(settings.Api.ApiKeyProtected) ? 1 : 0;
     }
 
@@ -49,12 +53,13 @@ public static class ApiProbe
         var png = args.Length > 2 && !args[2].StartsWith("--") ? args[2] : "";
         if (!File.Exists(png))
         {
-            Console.WriteLine("找不到图片: " + png);
+            Console.WriteLine(Loc.T("找不到图片: ", "Image not found: ") + png);
             return 2;
         }
 
         var settings = SettingsStore.Load();
         settings.Normalize();
+        Loc.SetLanguage(settings.Ui.Language);
 
         var bytes = File.ReadAllBytes(png);
         var client = new DeepSeekClient();
@@ -62,15 +67,17 @@ public static class ApiProbe
             .GetAwaiter().GetResult();
 
         var head = r.Ok
-            ? $"视觉翻译成功 {r.ElapsedMs}ms model={settings.Api.Model} 图片={bytes.Length / 1024}KB"
-            : $"视觉翻译失败 {r.ElapsedMs}ms status={r.StatusCode} 错误={r.Error}";
+            ? Loc.F("视觉翻译成功 {0}ms model={1} 图片={2}KB", "Vision translation OK {0}ms model={1} image={2}KB",
+                r.ElapsedMs, settings.Api.Model, bytes.Length / 1024)
+            : Loc.F("视觉翻译失败 {0}ms status={1} 错误={2}", "Vision translation failed {0}ms status={1} error={2}",
+                r.ElapsedMs, r.StatusCode, r.Error);
 
         Log.Info(head + (r.Ok ? "\n输出: " + r.Text : ""));
         Console.WriteLine(head);
         if (r.Ok)
         {
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("---------- 译文 ----------");
+            Console.WriteLine(Loc.T("---------- 译文 ----------", "---------- Translation ----------"));
             Console.WriteLine(r.Text);
         }
 
@@ -84,28 +91,32 @@ public static class ApiProbe
         var text = string.Join(" ", args.Skip(2).Where(a => !a.StartsWith("--")));
         if (string.IsNullOrWhiteSpace(text))
         {
-            Console.WriteLine("用法: GameTrans.exe --api-text <KEY> <要翻译的文字>");
+            Console.WriteLine(Loc.T("用法: GameTrans.exe --api-text <KEY> <要翻译的文字>", "Usage: GameTrans.exe --api-text <KEY> <text>"));
             return 2;
         }
 
         var settings = SettingsStore.Load();
         settings.Normalize();
+        Loc.SetLanguage(settings.Ui.Language);
 
         var client = new DeepSeekClient();
         var r = client.TranslateTextAsync(text, settings, key, CancellationToken.None)
             .GetAwaiter().GetResult();
 
         var head = r.Ok
-            ? $"文本翻译成功 {r.ElapsedMs}ms {settings.Prompt.InputSourceLanguage} -> {settings.Prompt.InputTargetLanguage}"
-            : $"文本翻译失败 {r.ElapsedMs}ms status={r.StatusCode} 错误={r.Error}";
+            ? Loc.F("文本翻译成功 {0}ms {1} -> {2}", "Text translation OK {0}ms {1} -> {2}",
+                r.ElapsedMs, Languages.Display(settings.Prompt.InputSourceLanguage),
+                Languages.Display(settings.Prompt.InputTargetLanguage))
+            : Loc.F("文本翻译失败 {0}ms status={1} 错误={2}", "Text translation failed {0}ms status={1} error={2}",
+                r.ElapsedMs, r.StatusCode, r.Error);
 
         Log.Info(head + (r.Ok ? "\n原文: " + text + "\n译文: " + r.Text : ""));
         Console.WriteLine(head);
         if (r.Ok)
         {
             Console.OutputEncoding = Encoding.UTF8;
-            Console.WriteLine("原文: " + text);
-            Console.WriteLine("译文: " + r.Text);
+            Console.WriteLine(Loc.T("原文: ", "Source: ") + text);
+            Console.WriteLine(Loc.T("译文: ", "Translation: ") + r.Text);
         }
 
         return r.Ok ? 0 : 1;

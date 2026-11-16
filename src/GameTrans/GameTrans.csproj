@@ -13,9 +13,9 @@
     <StartupObject>GameTrans.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.2.0</Version>
+    <Version>1.3.0</Version>
     <Product>GameTrans</Product>
-    <AssemblyTitle>GameTrans 游戏聊天翻译</AssemblyTitle>
+    <AssemblyTitle>GameTrans 游戏聊天翻译 / Game Chat Translator</AssemblyTitle>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <InvariantGlobalization>false</InvariantGlobalization>
 

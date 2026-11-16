@@ -1,13 +1,16 @@
-# 构建并发布 GameTrans（win-x64 / 自包含单文件）
+﻿# 构建并发布 GameTrans（win-x64 / 自包含单文件）
 # 用法： powershell -ExecutionPolicy Bypass -File .\scripts\publish.ps1
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
-    [string]$Output = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist')
+    [string]$Output
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
+# Windows PowerShell 5.1 下 [CmdletBinding()] 的脚本在参数绑定阶段 $PSScriptRoot 还是空值，
+# 因此输出目录在这里（绑定之后）再算默认值。
+if ([string]::IsNullOrWhiteSpace($Output)) { $Output = Join-Path $repo 'dist' }
 $proj = Join-Path $repo 'src\GameTrans\GameTrans.csproj'
 
 Write-Host '== 环境检查 ==' -ForegroundColor Cyan

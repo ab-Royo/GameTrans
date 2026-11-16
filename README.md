@@ -2,11 +2,16 @@
 
 # GameTrans
 
-面向 PC 游戏的实时聊天翻译工具。以屏幕指定区域为识别范围，按快捷键截图并交由 DeepSeek 视觉模型完成文字识别与翻译，结果以可配置样式的文本层叠加在原位显示；另提供输入翻译通道，将中文输入翻译为英文并写入剪贴板。
+**简体中文** | [English](README.en.md)
+
+面向 PC 游戏的实时聊天翻译工具。以屏幕指定区域为识别范围，按快捷键截图并交由 DeepSeek 视觉模型完成文字识别与翻译，结果以可配置样式的文本层叠加在原位显示；另提供输入翻译通道，把输入的文本按设定方向翻译后写入剪贴板。
 
 - 独立 64 位进程，单文件自包含发布，**无需管理员权限**
 - 不依赖游戏客户端、账号体系或加速器组件
 - 叠加层点击穿透、不抢占焦点，并从屏幕截图中排除（不会把译文再次识别）
+- 界面支持**简体中文 / English** 切换；翻译方向与目标 API 均为下拉选择
+
+当前版本：**1.3.0**　·　项目主页：[github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans)　·　QQ 群：**419733401**　·　Bilibili：[ab_Roy 的个人空间](https://m.bilibili.com/space/51952428)
 
 ## 功能概览
 
@@ -14,13 +19,16 @@
 |---|---|
 | 区域识别 | 全屏冻结截图 + 拖拽框选，支持多显示器与混合 DPI |
 | 画面翻译 | 默认 `F8`：截图 → 视觉模型识别并翻译 → 叠加显示；再次按下隐藏 |
-| 输入翻译 | 默认 `F9`：以识别区域左上角为锚点弹出输入框，中文输入翻译为英文 |
+| 输入翻译 | 默认 `F9`：以识别区域左上角为锚点弹出输入框，按设定方向翻译并复制 |
+| 界面语言 | 设置页一键切换 简体中文 / English，全部界面文案与提示立即生效 |
+| 翻译方向 | 源语言：自动识别 / 中文 / 英文 / 韩文 / 日文；目标语言：中文 / 英文 / 韩文 / 日文（画面翻译与 F9 各自独立） |
+| 目标 API | DeepSeek 中国站 / 国际站，默认跟随界面语言，附开放平台、API 文档与官网跳转链接 |
 | 快捷键绑定 | 支持键盘按键与鼠标滚轮按下（中键）、鼠标侧键1、鼠标侧键2，可叠加 `Ctrl` / `Alt` / `Shift` |
 | 文本叠加层 | 背景色/透明度、文字色、字体字号、内边距、圆角、边框、对齐方式均可配置 |
 | 溢出策略 | 文本超出识别区域时默认向下扩展（字号不变），可选缩放适配 |
 | 术语表 | 手工维护「词条 → 含义」对照，随提示词下发以约束游戏内专有说法 |
 | 启动页 | 汇总模型接口、识别区域、快捷键、术语表状态，并提供配置入口 |
-| 无界面自检 | `--selftest` 校验配置、截屏、离屏渲染、请求体结构与提示词生成 |
+| 无界面自检 | `--selftest` 校验配置、截屏、离屏渲染、请求体结构、提示词与语言/站点归一化 |
 
 ## 界面
 
@@ -28,9 +36,13 @@
 
 <img src="docs/images/startup.png" width="620">
 
-**设置**
+**设置（简体中文）**
 
 <img src="docs/images/settings.png" width="520">
+
+**设置（English）**
+
+<img src="docs/images/en/settings.png" width="520">
 
 **文本叠加层**（识别区域为 370 × 130 像素时的排版结果）
 
@@ -56,12 +68,15 @@
 
 ## 快速开始
 
-1. 从 Releases 下载 `GameTrans.exe`。
-2. 双击运行，启动页点击「设置」，填入 DeepSeek API Key，点击「测试连接」确认连通后保存。
+1. 从 [Releases](https://github.com/ab-Royo/GameTrans/releases) 下载 `GameTrans.exe`。
+2. 双击运行，启动页点击「设置」：
+   - 在「界面」卡片选择界面语言（简体中文 / English）；
+   - 在「模型接口」确认目标 API（默认跟随界面语言），填入 DeepSeek API Key，点击「测试连接」确认连通后保存；
+   - 按需调整源语言 / 目标语言（均为下拉框，源语言可设为「自动」）。
 3. 启动页点击「设置识别区域」，在游戏画面上框选聊天或字幕区域，按 Enter 确认。
 4. 回到游戏：
    - 按 `F8` 翻译当前画面，再次按下隐藏；
-   - 按 `F9` 输入中文，回车后译文写入剪贴板，转回游戏粘贴。
+   - 按 `F9` 输入文本，回车后译文写入剪贴板，转回游戏粘贴。
 
 首次配置完成后，程序常驻系统托盘；托盘菜单可执行翻译、重新设置识别区域、打开术语表、设置与退出。
 
@@ -79,19 +94,42 @@ F8 ─┬─ 叠加层可见 ─────────────────
 
 - 叠加层以识别区域左上角为锚点，宽度与区域一致；译文高度超出时向下扩展。
 - 请求失败时叠加层显示错误状态，不静默失败。
+- 翻译方向由设置页「源语言 / 目标语言」决定，默认 `自动识别 → 中文`。
 
 ### 输入翻译（默认 F9）
 
 ```
 F9 ─► 以识别区域左上角为锚点弹出输入框（半透明）
-     ─► 输入中文 → Enter
-     ─► 模型翻译为英文 → 写入剪贴板 → 输入框内显示译文
+     ─► 输入文本 → Enter
+     ─► 模型按设定方向翻译 → 写入剪贴板 → 输入框内显示译文
      ─► 3 秒后自动关闭（任意按键取消），Enter 可立即关闭
 ```
 
-方向由「输入源语言 / 输入目标语言」决定，默认 `中文（简体） → English`，与画面翻译方向互不影响。
+方向由「输入翻译」的源语言 / 目标语言决定，默认 `中文 → 英文`，与画面翻译方向互不影响。
 
 剪贴板被其他程序占用时（部分加速器、录屏 / overlay 工具会周期性占用剪贴板），输入框状态栏会提示「剪贴板被占用，未能复制」；此时 Enter 仍会立即关闭输入框，不会卡住界面。
+
+### 界面语言
+
+入口：设置页「界面」→「界面语言」。
+
+- 可切换 **简体中文 / English**；切换后界面立即生效，无需重启。
+- 设置页会就地按新语言重建（未保存的其它修改保留在本次编辑中）；启动页、托盘菜单、输入框、术语表等在下一次打开时使用新语言。
+- 语言同时决定目标 API 的默认值：中文界面默认「DeepSeek 中国站」，其它语言默认「DeepSeek 国际站」。
+- 界面语言保存在配置文件的 `ui.language` 字段。
+
+### 目标 API（DeepSeek 中国站 / 国际站）
+
+入口：设置页「模型接口」→「目标 API」。
+
+| 选项 | 默认 Base URL | 开放平台 | API 文档 |
+|---|---|---|---|
+| DeepSeek 中国站 | `https://api.deepseek.com` | [platform.deepseek.com](https://platform.deepseek.com/) | [api-docs.deepseek.com/zh-cn](https://api-docs.deepseek.com/zh-cn/) |
+| DeepSeek 国际站 | `https://api.deepseek.com` | [platform.deepseek.com](https://platform.deepseek.com/) | [api-docs.deepseek.com](https://api-docs.deepseek.com/) |
+
+- DeepSeek 官方对中国站与海外账号使用**同一个 API 端点** `https://api.deepseek.com`；两个选项的区别在于开放平台入口、文档语言与账号区域（国际站支持邮箱注册与美元充值），设置页会显示对应的「开放平台 / API 文档 / 官网」跳转链接。
+- 切换选项会把 Base URL 重置为对应预设；如需自定义网关，可在 Base URL 中手工修改（不会被覆盖）。
+- 界面语言为中文时默认中国站，其它语言默认国际站；在设置页手动改过目标 API 后，切换界面语言不会覆盖你的选择。
 
 ### 快捷键绑定
 
@@ -127,15 +165,17 @@ F9 ─► 以识别区域左上角为锚点弹出输入框（半透明）
 
 | 分组 | 字段 | 说明 |
 |---|---|---|
-| `api` | `baseUrl` | 接口地址，默认 `https://api.deepseek.com` |
+| `ui` | `language` | 界面语言：`zh` / `en`，默认 `zh` |
+| `api` | `site` | 目标 API：`cn` 中国站 / `intl` 国际站；缺省或非法值按界面语言取默认 |
+| | `baseUrl` | 接口地址，默认 `https://api.deepseek.com`（可自定义网关） |
 | | `model` | 模型名，默认 `deepseek-flash` |
 | | `apiKeyProtected` | DPAPI 加密后的 API Key（由程序写入，勿手工填写明文） |
 | | `detail` | `high` / `original` 保留原图细节；`low` 缩放至 512×512 |
 | | `maxTokens` / `temperature` / `timeoutSeconds` | 默认 2048 / 0.2 / 90 |
 | `prompt` | `gameName` | 目标作品名称，写入提示词以约束术语与语气 |
-| | `sourceLanguage` / `targetLanguage` | 画面翻译方向，默认自动识别 → 中文（简体） |
-| | `inputSourceLanguage` / `inputTargetLanguage` | F9 方向，默认 中文（简体） → English |
-| | `outputMode` | `translated` 仅译文 / `ocr` 仅识别 |
+| | `sourceLanguage` / `targetLanguage` | 画面翻译方向，语言代码：`auto` / `zh` / `en` / `ko` / `ja`，默认 `auto` → `zh` |
+| | `inputSourceLanguage` / `inputTargetLanguage` | F9 方向，语言代码同上（源语言可 `auto`），默认 `zh` → `en` |
+| | `outputMode` | `translated` 仅译文 / `bilingual` 原文+译文 / `ocr` 仅识别 |
 | | `glossary` | 术语表，`{ term, meaning }` 数组 |
 | | `extraInstruction` | 追加指令；`systemPrompt` 留空时使用内置模板 |
 | `overlay` | `bgColor` / `bgOpacity` | 背景色与不透明度 |
@@ -151,6 +191,8 @@ F9 ─► 以识别区域左上角为锚点弹出输入框（半透明）
 | `region` | `left` / `top` / `right` / `bottom` | 识别区域，虚拟桌面物理像素坐标 |
 | `behavior` | `showStartupWindow` / `inputOpacity` | 启动页开关、输入框不透明度 |
 | | `showLatency` / `copyInputResult` | 耗时显示、自动复制 |
+
+> 从 1.2.x 及更早版本升级时，配置中的旧语言名（如 `中文（简体）`、`English`、`自动识别`）会在读取时自动归一化为语言代码，无需手工修改。
 
 </details>
 
@@ -169,7 +211,7 @@ F9 ─► 以识别区域左上角为锚点弹出输入框（半透明）
             └──────────────┘  PNG   └──────────────┘  文本  └────────────────┘
 ```
 
-详见 [docs/DESIGN.md](docs/DESIGN.md)，包含截图坐标换算、叠加层窗口样式、提示词设计与已知限制。
+详见 [docs/DESIGN.md](docs/DESIGN.md)，包含截图坐标换算、叠加层窗口样式、界面本地化与目标 API 设计、已知限制。
 
 ## 构建与发布
 
@@ -198,6 +240,7 @@ dist\GameTrans.exe --selftest .\out
 | `--api-test <API_KEY>` | 文本探针，验证接口连通性 |
 | `--api-text <API_KEY> <文本>` | 按 F9 方向翻译指定文本 |
 | `--api-vision <API_KEY> <图片>` | 对指定图片执行视觉翻译 |
+| `--lang <zh\|en>` | 指定离屏演示/自检的界面语言（用于生成中英文界面截图） |
 | `--demo-startup <png>` | 启动页离屏渲染 |
 | `--demo-glossary <png>` | 术语表离屏渲染 |
 | `--demo-settings <png>` | 设置页整页离屏渲染 |
@@ -213,6 +256,12 @@ dist\GameTrans.exe --selftest .\out
 
 **F9 结果框按 Enter 不消失 / 复制失败**
 剪贴板被其他程序占用（部分加速器、录屏 / overlay 工具会周期性占用剪贴板）。1.2.0 之后复制最多等待 250 ms，失败会在状态栏提示并立即关闭输入框，不再卡住界面；想保留复制结果可稍后重按 Enter 重试。
+
+**切换成 English 后界面没变化？**
+语言切换立即生效：设置页会就地重建。其它已打开的窗口（启动页、输入框）在下一次打开时应用新语言；如果启动页正开着，保存设置后会自动按新语言重建。若仍显示旧语言，请确认已点击「保存」。
+
+**中国站和国际站的接口地址为什么一样？**
+DeepSeek 官方目前对国内与海外账号共用 `https://api.deepseek.com` 端点，两个选项用于选择开放平台入口、文档语言与账号区域，并不改变 API 协议；如需自定义网关可在 Base URL 中修改。
 
 **截图全黑 / 叠加层不显示**
 游戏处于独占全屏模式，或画面受 DRM 保护。请切换至无边框窗口化。
@@ -231,6 +280,12 @@ dist\GameTrans.exe --selftest .\out
 - API Key 使用 Windows DPAPI 加密存储，仅当前用户可解密。
 - 截图仅在内存中编码为 PNG 并发送至所配置的模型接口，不写入磁盘。
 - 程序不包含遥测、统计或更新检查。
+
+## 社区
+
+- 项目主页与问题反馈：[GitHub](https://github.com/ab-Royo/GameTrans)（[Issues](https://github.com/ab-Royo/GameTrans/issues)）
+- QQ 群：**419733401**（启动页、设置页与托盘菜单中点击群号即可复制）
+- Bilibili：[ab_Roy 的个人空间](https://m.bilibili.com/space/51952428)
 
 ## 免责声明
 

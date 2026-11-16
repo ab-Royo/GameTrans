@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace GameTrans.UI;
@@ -110,10 +112,40 @@ internal static class Theme
             BorderBrush = primary ? Accent : Line,
             BorderThickness = new Thickness(1),
             Cursor = System.Windows.Input.Cursors.Hand,
+            HorizontalAlignment = HorizontalAlignment.Left,
         };
-        if (!double.IsNaN(width)) b.Width = width;
+        if (!double.IsNaN(width)) b.MinWidth = width;
         b.Click += (_, _) => click();
         return b;
+    }
+
+    /// <summary>可点击的链接文本（打开外部页面）。</summary>
+    public static TextBlock Link(string text, string url, double size = 12, Brush? fg = null) =>
+        LinkAction(text, () => OpenUrl(url), size, fg, url);
+
+    /// <summary>可点击的链接文本（执行自定义动作，例如复制群号）。</summary>
+    public static TextBlock LinkAction(string text, Action click, double size = 12, Brush? fg = null,
+        string? tooltip = null)
+    {
+        var tb = L(text, size, fg ?? Accent);
+        tb.TextDecorations = TextDecorations.Underline;
+        tb.Cursor = Cursors.Hand;
+        if (!string.IsNullOrEmpty(tooltip)) tb.ToolTip = tooltip;
+        tb.MouseLeftButtonUp += (_, _) => click();
+        return tb;
+    }
+
+    /// <summary>打开外部链接；失败静默（不打断主流程）。</summary>
+    public static void OpenUrl(string url)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch
+        {
+            // 打不开浏览器时不影响功能
+        }
     }
 
     public static CheckBox Chk(string text, bool value, Action<bool> onChange)

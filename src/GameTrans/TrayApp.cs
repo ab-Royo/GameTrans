@@ -25,6 +25,7 @@ public sealed class TrayApp : IDisposable
     public TrayApp(AppSettings settings)
     {
         _settings = settings;
+        Loc.SetLanguage(_settings.Ui.Language);
 
         _hotkeys.TranslatePressed += () => TranslateHotkey();
         _hotkeys.InputPressed += () => InputHotkey();
@@ -50,7 +51,7 @@ public sealed class TrayApp : IDisposable
             _tray = new NotifyIcon
             {
                 Icon = LoadTrayIcon(),
-                Text = "GameTrans 游戏聊天翻译",
+                Text = Loc.T("GameTrans 游戏聊天翻译", "GameTrans Game Chat Translator"),
                 Visible = true,
             };
             _tray.DoubleClick += (_, _) => OpenSettings();
@@ -64,24 +65,45 @@ public sealed class TrayApp : IDisposable
         ApplyHotkeys(notify: true);
 
         if (!startupShown && !_settings.Region.IsUsable)
-            Toast("尚未设置识别区域，请按 " + _settings.Hotkeys.TranslateText + " 打开选区", false);
+            Toast(Loc.F("尚未设置识别区域，请按 {0} 打开选区", "No capture region yet; press {0} to select one", _settings.Hotkeys.TranslateText), false);
     }
 
     private ContextMenuStrip BuildMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(new ToolStripMenuItem($"翻译当前区域 ({_settings.Hotkeys.TranslateText})",
+        menu.Items.Add(new ToolStripMenuItem(Loc.F("翻译当前区域 ({0})", "Translate current region ({0})", _settings.Hotkeys.TranslateText),
             null, (_, _) => TranslateHotkey()));
-        menu.Items.Add(new ToolStripMenuItem($"输入翻译 ({_settings.Hotkeys.InputText})",
+        menu.Items.Add(new ToolStripMenuItem(Loc.F("输入翻译 ({0})", "Input translation ({0})", _settings.Hotkeys.InputText),
             null, (_, _) => InputHotkey()));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("启动页…", null, (_, _) => ShowStartup()));
-        menu.Items.Add(new ToolStripMenuItem("重新设置识别区域…", null, (_, _) => PickRegion(showToast: true)));
-        menu.Items.Add(new ToolStripMenuItem("术语 / 黑话对照表…", null, (_, _) => OpenGlossary()));
-        menu.Items.Add(new ToolStripMenuItem("设置…", null, (_, _) => OpenSettings()));
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("启动页…", "Startup page…"), null, (_, _) => ShowStartup()));
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("重新设置识别区域…", "Set capture region…"), null, (_, _) => PickRegion(showToast: true)));
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("术语 / 黑话对照表…", "Glossary / Slang…"), null, (_, _) => OpenGlossary()));
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("设置…", "Settings…"), null, (_, _) => OpenSettings()));
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(new ToolStripMenuItem("退出", null, (_, _) => Shutdown()));
+
+        var links = new ToolStripMenuItem(Loc.T("社区 / 链接", "Community / links"));
+        links.DropDownItems.Add(new ToolStripMenuItem("GitHub  " + AppLinks.Repository,
+            null, (_, _) => Theme.OpenUrl(AppLinks.Repository)));
+        links.DropDownItems.Add(new ToolStripMenuItem(
+            Loc.T("QQ 群 " + AppLinks.QQGroup + "（复制群号）", "QQ group " + AppLinks.QQGroup + " (copy)"),
+            null, (_, _) => CopyQQGroup()));
+        links.DropDownItems.Add(new ToolStripMenuItem(Loc.T("Bilibili 空间", "Bilibili space"),
+            null, (_, _) => Theme.OpenUrl(AppLinks.Bilibili)));
+        menu.Items.Add(links);
+
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("退出", "Exit"), null, (_, _) => Shutdown()));
         return menu;
+    }
+
+    private static void CopyQQGroup()
+    {
+        bool ok = AppLinks.CopyQQGroup();
+        Toast(ok
+                ? Loc.T("QQ 群号已复制：" + AppLinks.QQGroup, "QQ group number copied: " + AppLinks.QQGroup)
+                : Loc.T("剪贴板被占用，未能复制群号", "Clipboard busy; group number was not copied"),
+            !ok);
     }
 
     private static Drawing.Icon LoadTrayIcon()
@@ -148,7 +170,7 @@ public sealed class TrayApp : IDisposable
     private bool EnsureApiKey()
     {
         if (!string.IsNullOrWhiteSpace(ApiKey)) return true;
-        Toast("尚未配置 DeepSeek API Key，请在设置中填写", true);
+        Toast(Loc.T("尚未配置 DeepSeek API Key，请在设置中填写", "No DeepSeek API key yet; add one in Settings"), true);
         OpenSettings();
         return false;
     }
@@ -170,7 +192,7 @@ public sealed class TrayApp : IDisposable
         var picked = RegionSelectorWindow.Pick(current);
         if (picked is not { IsUsable: true })
         {
-            if (showToast) Toast("已取消选区操作", false);
+            if (showToast) Toast(Loc.T("已取消选区操作", "Region selection cancelled"), false);
             return false;
         }
 
@@ -180,7 +202,7 @@ public sealed class TrayApp : IDisposable
         _settings.Region.Right = picked.Value.Right;
         _settings.Region.Bottom = picked.Value.Bottom;
         SettingsStore.Save(_settings);
-        Toast($"识别区域已更新：{_settings.Region.Width} × {_settings.Region.Height}", false);
+        Toast(Loc.F("识别区域已更新：{0} × {1}", "Capture region updated: {0} × {1}", _settings.Region.Width, _settings.Region.Height), false);
         return true;
     }
 
@@ -205,7 +227,7 @@ public sealed class TrayApp : IDisposable
             _settings.Region.Right, _settings.Region.Bottom);
         if (!region.IsUsable)
         {
-            Toast("识别区域无效，请重新设置", true);
+            Toast(Loc.T("识别区域无效，请重新设置", "Invalid capture region; please set it again"), true);
             return;
         }
 
@@ -230,13 +252,13 @@ public sealed class TrayApp : IDisposable
         catch (Exception ex)
         {
             Log.Error("截图失败: " + ex);
-            Toast("截图失败：" + ex.Message, true);
+            Toast(Loc.T("截图失败：", "Capture failed: ") + ex.Message, true);
             return;
         }
 
         if (ct.IsCancellationRequested) return;
 
-        _overlay.ShowText(region, _settings, "识别中…", "模型请求中");
+        _overlay.ShowText(region, _settings, Loc.T("识别中…", "Recognizing…"), Loc.T("模型请求中", "Waiting for model"));
         var r = await _client.TranslateImageAsync(png, _settings, ApiKey, ct);
 
         if (ct.IsCancellationRequested) return;
@@ -251,7 +273,7 @@ public sealed class TrayApp : IDisposable
         }
         else
         {
-            _overlay.UpdateText("翻译失败\n" + r.Error, null);
+            _overlay.UpdateText(Loc.T("翻译失败\n", "Translation failed\n") + r.Error, null);
             Log.Warn("翻译失败: " + r.Error);
         }
     }
@@ -303,7 +325,7 @@ public sealed class TrayApp : IDisposable
         _settings.Prompt.Glossary = edited;
         SettingsStore.Save(_settings);
         _startup?.Refresh(_settings);
-        Toast($"术语表已保存（{edited.Count} 项）", false);
+        Toast(Loc.F("术语表已保存（{0} 项）", "Glossary saved ({0} entries)", edited.Count), false);
     }
     private void OpenSettings()
     {
@@ -315,13 +337,40 @@ public sealed class TrayApp : IDisposable
 
         _settingsWindow = new SettingsWindow(_settings, updated =>
         {
+            var languageChanged = !string.Equals(updated.Ui.Language, _settings.Ui.Language,
+                StringComparison.Ordinal);
             _settings = updated;
             ApplyHotkeys(notify: true);
-            _startup?.Refresh(_settings);
+            if (languageChanged) ApplyLanguage();
+            else
+            {
+                RebuildTray();
+                _startup?.Refresh(_settings);
+            }
         });
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
+    }
+
+    /// <summary>界面语言变化后：刷新托盘菜单/提示，并在启动页可见时用新语言重建。</summary>
+    private void ApplyLanguage()
+    {
+        Loc.SetLanguage(_settings.Ui.Language);
+        RebuildTray();
+
+        if (_startup is { IsVisible: true })
+        {
+            _startup.Close();
+            ShowStartup();
+        }
+    }
+
+    private void RebuildTray()
+    {
+        if (_tray == null) return;
+        _tray.Text = Loc.T("GameTrans 游戏聊天翻译", "GameTrans Game Chat Translator");
+        _tray.ContextMenuStrip = BuildMenu();
     }
 
     public void Shutdown()

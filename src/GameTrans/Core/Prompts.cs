@@ -2,18 +2,18 @@ using System.Text;
 
 namespace GameTrans.Core;
 
-/// <summary>提示词模板：画面翻译出中文，F9 输入翻译中→英；两者都注入玩家自定义的黑话对照。</summary>
+/// <summary>提示词模板：画面翻译输出目标语言，F9 输入翻译按设置方向；两者都注入玩家自定义的黑话对照。</summary>
 public static class Prompts
 {
-    /// <summary>画面翻译（截图 → 中文）。</summary>
+    /// <summary>画面翻译（截图 → 目标语言）。</summary>
     public static string System(AppSettings s)
     {
         if (!string.IsNullOrWhiteSpace(s.Prompt.SystemPrompt))
             return s.Prompt.SystemPrompt.Trim();
 
         var game = GameLabel(s);
-        var target = s.Prompt.TargetLanguage;
-        var src = IsAuto(s.Prompt.SourceLanguage) ? "自动识别" : s.Prompt.SourceLanguage;
+        var target = Languages.PromptName(s.Prompt.TargetLanguage);
+        var src = Languages.PromptName(s.Prompt.SourceLanguage);
 
         var sb = new StringBuilder();
         sb.AppendLine($"你是游戏《{game}》的实时聊天/字幕翻译引擎。");
@@ -60,12 +60,12 @@ public static class Prompts
         return sb.ToString().TrimEnd();
     }
 
-    /// <summary>F9 输入翻译（中文 → 英文）。</summary>
+    /// <summary>F9 输入翻译（默认 中文 → 英文）。</summary>
     public static string TextSystem(AppSettings s)
     {
         var game = GameLabel(s);
-        var from = s.Prompt.InputSourceLanguage;
-        var to = s.Prompt.InputTargetLanguage;
+        var from = Languages.PromptName(s.Prompt.InputSourceLanguage);
+        var to = Languages.PromptName(s.Prompt.InputTargetLanguage);
 
         var sb = new StringBuilder();
         sb.AppendLine($"你是游戏《{game}》的聊天翻译助手。");
@@ -94,7 +94,7 @@ public static class Prompts
     public static string TextInstruction(AppSettings s) =>
         s.Prompt.OutputMode == "ocr"
             ? "原样输出下面这段文字，不要翻译："
-            : $"把下面这段文字翻译成{s.Prompt.InputTargetLanguage}，只输出译文：";
+            : $"把下面这段文字翻译成{Languages.PromptName(s.Prompt.InputTargetLanguage)}，只输出译文：";
 
     private static string GameLabel(AppSettings s) =>
         string.IsNullOrWhiteSpace(s.Prompt.GameName) ? "游戏" : s.Prompt.GameName.Trim();
@@ -126,8 +126,4 @@ public static class Prompts
 
         sb.AppendLine("遇到上面的词时，按给定含义翻译，不要按字面或普通词典义；表中没有的词按上下文判断。");
     }
-
-    private static bool IsAuto(string? v) =>
-        string.IsNullOrWhiteSpace(v) || v.Equals("auto", StringComparison.OrdinalIgnoreCase) ||
-        v.Equals("自动", StringComparison.Ordinal) || v.Equals("自动识别", StringComparison.Ordinal);
 }
