@@ -41,8 +41,8 @@ public sealed class SettingsWindow : Window
         Foreground = Theme.Text;
         ShowInTaskbar = true;
 
-        _hotkeyTranslateBtn = Theme.Btn(_s.Hotkeys.TranslateText, StartCaptureTranslate, false, 130);
-        _hotkeyInputBtn = Theme.Btn(_s.Hotkeys.InputText, StartCaptureInput, false, 130);
+        _hotkeyTranslateBtn = Theme.Btn(_s.Hotkeys.TranslateText, StartCaptureTranslate, false, 150);
+        _hotkeyInputBtn = Theme.Btn(_s.Hotkeys.InputText, StartCaptureInput, false, 150);
 
         var root = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(16) };
 
@@ -96,6 +96,7 @@ public sealed class SettingsWindow : Window
         _keyBox.BorderThickness = new Thickness(1);
 
         PreviewKeyDown += OnPreviewKey;
+        PreviewMouseDown += OnPreviewMouseDown;
         RefreshRegionLabel();
         RefreshPreview();
     }
@@ -420,7 +421,7 @@ public sealed class SettingsWindow : Window
 
     private UIElement BuildHotkeyCard()
     {
-        var hint = Theme.L("点击后按下目标按键组合（可含 Ctrl / Alt / Shift 修饰键）；按 Esc 取消录制。", 12, Theme.Sub);
+        var hint = Theme.L("点击后按下目标按键组合（可含 Ctrl / Alt / Shift 修饰键）；也支持鼠标滚轮按下、鼠标侧键1、鼠标侧键2；按 Esc 取消录制。", 12, Theme.Sub);
 
         var regionRow = new StackPanel { Orientation = Orientation.Horizontal };
         regionRow.Children.Add(Theme.Btn("重新选区", () => _ = PickRegion(), false, 96));
@@ -490,9 +491,7 @@ public sealed class SettingsWindow : Window
         e.Handled = true;
         if (e.Key == Key.Escape)
         {
-            _capturingHotkey = 0;
-            _hotkeyTranslateBtn.Content = _s.Hotkeys.TranslateText;
-            _hotkeyInputBtn.Content = _s.Hotkeys.InputText;
+            CancelCapture();
             return;
         }
 
@@ -504,13 +503,40 @@ public sealed class SettingsWindow : Window
         uint vk = (uint)KeyInterop.VirtualKeyFromKey(key);
         if (vk == 0) return;
 
+        CommitCapture(vk, CurrentMods());
+    }
+
+    /// <summary>录制期间接受鼠标中键、侧键1、侧键2（键盘热键无法覆盖的按键）。</summary>
+    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_capturingHotkey == 0) return;
+
+        uint vk = e.ChangedButton switch
+        {
+            MouseButton.Middle => Win32.VK_MBUTTON,
+            MouseButton.XButton1 => Win32.VK_XBUTTON1,
+            MouseButton.XButton2 => Win32.VK_XBUTTON2,
+            _ => 0u,
+        };
+        if (vk == 0) return;
+
+        e.Handled = true;
+        CommitCapture(vk, CurrentMods());
+    }
+
+    private static uint CurrentMods()
+    {
         uint mods = 0;
         var m = Keyboard.Modifiers;
         if ((m & ModifierKeys.Control) != 0) mods |= Win32.MOD_CONTROL;
         if ((m & ModifierKeys.Alt) != 0) mods |= Win32.MOD_ALT;
         if ((m & ModifierKeys.Shift) != 0) mods |= Win32.MOD_SHIFT;
         if ((m & ModifierKeys.Windows) != 0) mods |= Win32.MOD_WIN;
+        return mods;
+    }
 
+    private void CommitCapture(uint vk, uint mods)
+    {
         if (_capturingHotkey == 1)
         {
             _s.Hotkeys.TranslateVk = vk;
@@ -525,6 +551,13 @@ public sealed class SettingsWindow : Window
         }
 
         _capturingHotkey = 0;
+    }
+
+    private void CancelCapture()
+    {
+        _capturingHotkey = 0;
+        _hotkeyTranslateBtn.Content = _s.Hotkeys.TranslateText;
+        _hotkeyInputBtn.Content = _s.Hotkeys.InputText;
     }
 
     private UIElement BuildAboutCard()

@@ -219,6 +219,25 @@ internal static class SelfTest
                 "== 画面翻译 ==\n" + img + "\n\n== F9 输入翻译 ==\n" + txt);
         });
 
+        Step("鼠标键热键名称与配置", () =>
+        {
+            if (KeyName.Format(0, Win32.VK_MBUTTON) != "鼠标中键") throw new Exception("中键名称异常");
+            if (KeyName.Format(Win32.MOD_CONTROL, Win32.VK_XBUTTON1) != "Ctrl+鼠标侧键1") throw new Exception("侧键1 名称异常");
+            if (KeyName.Format(Win32.MOD_SHIFT, Win32.VK_XBUTTON2) != "Shift+鼠标侧键2") throw new Exception("侧键2 名称异常");
+            if (!Win32.IsMouseVk(Win32.VK_MBUTTON) || !Win32.IsMouseVk(Win32.VK_XBUTTON1)
+                || !Win32.IsMouseVk(Win32.VK_XBUTTON2) || Win32.IsMouseVk(0x77))
+                throw new Exception("鼠标键判定异常");
+
+            var s = new AppSettings();
+            s.Hotkeys.TranslateVk = Win32.VK_XBUTTON2;
+            s.Hotkeys.TranslateMods = 0;
+            s.Hotkeys.InputVk = Win32.VK_MBUTTON;
+            s.Hotkeys.InputMods = Win32.MOD_SHIFT;
+            s.Normalize();
+            if (s.Hotkeys.TranslateText != "鼠标侧键2") throw new Exception("翻译热键往返异常: " + s.Hotkeys.TranslateText);
+            if (s.Hotkeys.InputText != "Shift+鼠标中键") throw new Exception("输入热键往返异常: " + s.Hotkeys.InputText);
+        });
+
         var report = string.Join(Environment.NewLine,
             $"GameTrans self-test  {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
             $"虚拟屏幕: ({vs.Left},{vs.Top}) {vs.Width}x{vs.Height}",

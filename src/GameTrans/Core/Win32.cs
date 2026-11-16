@@ -146,6 +146,45 @@ internal static class Win32
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
+    // ---------- 按键状态（鼠标键热键轮询用） ----------
+    public const int VK_SHIFT = 0x10;
+    public const int VK_CONTROL = 0x11;
+    public const int VK_MENU = 0x12;
+    public const int VK_LWIN = 0x5B;
+    public const int VK_RWIN = 0x5C;
+
+    /// <summary>鼠标滚轮按下（中键）。</summary>
+    public const uint VK_MBUTTON = 0x04;
+
+    /// <summary>鼠标侧键 1（通常的“后退”键）。</summary>
+    public const uint VK_XBUTTON1 = 0x05;
+
+    /// <summary>鼠标侧键 2（通常的“前进”键）。</summary>
+    public const uint VK_XBUTTON2 = 0x06;
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int vKey);
+
+    public static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>是否为鼠标中键 / 侧键（这些键无法用 RegisterHotKey 注册，只能轮询）。</summary>
+    public static bool IsMouseVk(uint vk) => vk is VK_MBUTTON or VK_XBUTTON1 or VK_XBUTTON2;
+
+    // ---------- 剪贴板 ----------
+    public const uint CF_UNICODETEXT = 13;
+    public const uint GMEM_MOVEABLE = 0x0002;
+
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool OpenClipboard(IntPtr hWndNewOwner);
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool CloseClipboard();
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool EmptyClipboard();
+    [DllImport("user32.dll", SetLastError = true)] public static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GlobalFree(IntPtr hMem);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GlobalLock(IntPtr hMem);
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GlobalUnlock(IntPtr hMem);
+
     // ---------- DPAPI（加密保存 API Key） ----------
     [StructLayout(LayoutKind.Sequential)]
     private struct DATA_BLOB

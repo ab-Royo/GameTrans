@@ -16,7 +16,8 @@ src/GameTrans
 │  ├─ ScreenCapture.cs   抓帧、PNG 编码、坐标与 DPI 换算
 │  ├─ AppSettings.cs     配置模型、默认值、夹紧与归一化
 │  ├─ SettingsStore.cs   配置读写、密钥加解密、日志
-│  ├─ HotkeyManager.cs   RegisterHotKey 封装
+│  ├─ ClipboardService.cs 剪贴板写入（带时间预算的 Win32 实现）
+│  ├─ HotkeyManager.cs   RegisterHotKey（键盘）+ GetAsyncKeyState 轮询（鼠标键）
 │  ├─ DeepSeekClient.cs  chat/completions 调用与错误映射
 │  └─ Prompts.cs         提示词模板（画面翻译 / 输入翻译 / 术语表注入）
 └─ UI
@@ -78,11 +79,21 @@ src/GameTrans
 
 ## 5. 快捷键
 
+### 键盘键
+
 使用 `RegisterHotKey` 注册全局热键（默认 `F8` / `F9`），不使用低级键盘钩子：
 
 - 不注入进程、不拦截全局按键流，降低与反作弊和输入法的冲突面；
 - 注册失败可被检测（如已被其他程序占用），并反馈给用户；
 - 通过隐藏的 `HwndSource` 接收 `WM_HOTKEY`。
+
+### 鼠标键（中键 / 侧键1 / 侧键2）
+
+`RegisterHotKey` 只支持键盘虚拟键：对鼠标键（`VK_MBUTTON`=0x04、`VK_XBUTTON1`=0x05、`VK_XBUTTON2`=0x06）调用它会**返回成功但永远不会收到 `WM_HOTKEY`**（本机实测验证）。因此鼠标键改用轮询：
+
+- 只有绑定了鼠标键时才启动一个 15 ms 的 `DispatcherTimer`，用 `GetAsyncKeyState` 检测按下边沿，其余时候零开销；
+- 修饰键必须与绑定时完全一致（`Ctrl` / `Alt` / `Shift` / `Win`），且只在“未按 → 按下”的瞬间触发一次；
+- 不安装任何全局鼠标钩子，代价是**按键不会被本程序吞掉**：游戏里若也绑定了同一鼠标键，会同时响应；轮询粒度也意味着极短（<15 ms）的点击可能漏掉。
 
 ## 6. 模型调用
 
@@ -127,10 +138,17 @@ src/GameTrans
 - 所有数值在 `Normalize()` 中夹紧，避免手工编辑配置文件导致越界。
 - 日志单文件轮转（2 MB）。
 
-## 9. 已知限制
+## 9. 剪贴板写入
+
+F9 译文写入剪贴板不使用 WPF `Clipboard.SetText`：剪贴板被其他进程占用时（加速器、录屏 / overlay 工具会周期性 `OpenClipboard`），WPF 内部会重试约 10 次 × 100 ms 并**阻塞 UI 线程**，导致「按 Enter 关闭」被拖慢数秒甚至看起来无响应（曾定位到占用方是随游戏启动的 GameViewer）。
+
+改为 `ClipboardService.TrySetText`：先 `GlobalAlloc` 准备 `CF_UNICODETEXT` 内存，再 `OpenClipboard` / `EmptyClipboard` / `SetClipboardData`，在 250 ms 预算内重试，失败即返回。调用方据此在状态栏提示「剪贴板被占用」，并立即执行关闭，不再让 UI 线程等待。
+
+## 10. 已知限制
 
 - 无流式输出：单次请求返回完整结果，适合「看结果」而非「看打字」。
 - 无帧差/增量刷新：每次触发均为完整的一轮截图与翻译。
 - 术语表仅支持单一词条映射，未实现正则或上下文条件。
+- 鼠标键热键为轮询实现，无法拦截原始按键；游戏侧同名绑定会同时触发。
 - 仅在 100% 与 150% 缩放、单双屏环境完成验证；极端混合 DPI 建议实测。
 - 独占全屏与受 DRM 保护的画面无法截取，属系统限制。

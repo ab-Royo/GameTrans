@@ -22,6 +22,7 @@ public sealed class InputWindow : Window
     private readonly Button _sendBtn;
     private bool _busy;
     private bool _hasResult;
+    private bool _copied;
     private IntPtr _prevForeground;
     private System.Windows.Threading.DispatcherTimer? _autoClose;
 
@@ -182,8 +183,7 @@ public sealed class InputWindow : Window
         {
             if (_hasResult)
             {
-                CopyToClipboard(_input.Text);
-                Close();
+                CopyAndClose();
             }
             else
             {
@@ -192,6 +192,15 @@ public sealed class InputWindow : Window
 
             e.Handled = true;
         }
+    }
+
+    /// <summary>复制译文并关闭；复制失败时给出提示，但不阻塞关闭（避免「按 Enter 没反应」）。</summary>
+    private void CopyAndClose()
+    {
+        bool copied = CopyToClipboard(_input.Text);
+        if (!copied && !_copied)
+            ToastWindow.ShowToast("剪贴板被其他程序占用，未能复制译文", true);
+        Close();
     }
 
     private async Task TranslateAsync()
@@ -208,9 +217,8 @@ public sealed class InputWindow : Window
 
         if (_hasResult && text == _input.Text)
         {
-            // 已是结果，回车等于复制
-            CopyToClipboard(text);
-            Close();
+            // 已是结果，回车等于复制并关闭
+            CopyAndClose();
             return;
         }
 
@@ -233,13 +241,20 @@ public sealed class InputWindow : Window
             _hasResult = true;
             _input.Text = r.Text;
             _input.SelectAll();
-            if (_settings.Behavior.CopyInputResult) CopyToClipboard(r.Text);
+            bool copied = _settings.Behavior.CopyInputResult && CopyToClipboard(r.Text);
+            _copied = copied;
 
             _status.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0xE0, 0x9E));
-            if (_settings.Behavior.CopyInputResult)
+            if (copied)
             {
                 _status.Text = $"已复制到剪贴板，3 秒后自动关闭；Enter 立即关闭 · {r.ElapsedMs} ms";
                 ArmAutoClose();
+            }
+            else if (_settings.Behavior.CopyInputResult)
+            {
+                // 剪贴板被其他程序占用：不静默失败，也不自动关闭，交给用户再按 Enter 重试或点关闭
+                _status.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x6B));
+                _status.Text = $"剪贴板被占用，未能复制；Enter 重试复制并关闭 · {r.ElapsedMs} ms";
             }
             else
             {
@@ -271,24 +286,8 @@ public sealed class InputWindow : Window
         _autoClose.Start();
     }
 
-    public static bool CopyToClipboard(string text)
-    {
-        for (int i = 0; i < 6; i++)
-        {
-            try
-            {
-                Clipboard.SetText(text);
-                return true;
-            }
-            catch (Exception)
-            {
-                Thread.Sleep(40);
-            }
-        }
-
-        Log.Warn("写入剪贴板失败：剪贴板被其他进程占用");
-        return false;
-    }
+    /// <summary>复制结果（带时间预算，剪贴板被占用时快速失败，不阻塞 UI）。</summary>
+    public static bool CopyToClipboard(string text) => ClipboardService.TrySetText(text);
 
     public void RememberForeground()
     {

@@ -225,6 +225,9 @@ public static class KeyName
 
     public static string VkName(uint vk) => vk switch
     {
+        0x04 => "鼠标中键",
+        0x05 => "鼠标侧键1",
+        0x06 => "鼠标侧键2",
         0x08 => "Backspace",
         0x09 => "Tab",
         0x0D => "Enter",

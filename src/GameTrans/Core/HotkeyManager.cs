@@ -1,19 +1,38 @@
 using System.Windows.Interop;
+using System.Windows.Threading;
 
 namespace GameTrans.Core;
 
-/// <summary>全局热键：用 RegisterHotKey（不是低级键盘钩子），不触碰反作弊关注的输入链路。</summary>
+/// <summary>
+/// 全局热键。
+/// 键盘键走 <c>RegisterHotKey</c>（不使用低级键盘钩子，不触碰反作弊关注的输入链路）；
+/// 鼠标中键 / 侧键1 / 侧键2 无法通过 <c>RegisterHotKey</c> 注册（Windows 不支持鼠标按钮热键），
+/// 改用低频 <c>GetAsyncKeyState</c> 轮询（15 ms 一次，只在按下瞬间触发一次），同样不安装任何全局钩子。
+/// </summary>
 public sealed class HotkeyManager : IDisposable
 {
     private const int IdTranslate = 0x4A01;
     private const int IdInput = 0x4A02;
+    private const int MousePollIntervalMs = 15;
 
     private readonly HwndSource _source;
+    private readonly List<MouseBinding> _mouseBindings = new();
+    private DispatcherTimer? _mouseTimer;
     private bool _translateRegistered;
     private bool _inputRegistered;
 
     public event Action? TranslatePressed;
     public event Action? InputPressed;
+
+    private sealed class MouseBinding
+    {
+        public uint Vk;
+        public uint Mods;
+        public Action Fire = null!;
+
+        /// <summary>上一轮轮询时该键是否处于按下状态，用于只响应“按下”边沿。</summary>
+        public bool WasDown;
+    }
 
     public HotkeyManager()
     {
@@ -28,24 +47,109 @@ public sealed class HotkeyManager : IDisposable
         _source.AddHook(WndProc);
     }
 
-    /// <summary>返回 false 表示热键被其他程序占用。</summary>
+    /// <summary>返回 false 表示有热键注册失败（被占用 / 重复）。</summary>
     public bool Register(uint translateMods, uint translateVk, uint inputMods, uint inputVk,
         out string message)
     {
         Unregister();
-        var sb = new List<string>();
+        var errors = new List<string>();
 
-        _translateRegistered = Win32.RegisterHotKey(_source.Handle, IdTranslate,
-            translateMods | Win32.MOD_NOREPEAT, translateVk);
-        if (!_translateRegistered) sb.Add($"翻译热键 {KeyName.Format(translateMods, translateVk)} 注册失败（可能被占用）");
+        _translateRegistered = RegisterOne(IdTranslate, translateMods, translateVk, "翻译",
+            () => TranslatePressed?.Invoke(), errors);
+        _inputRegistered = RegisterOne(IdInput, inputMods, inputVk, "输入",
+            () => InputPressed?.Invoke(), errors);
 
-        _inputRegistered = Win32.RegisterHotKey(_source.Handle, IdInput,
-            inputMods | Win32.MOD_NOREPEAT, inputVk);
-        if (!_inputRegistered) sb.Add($"输入热键 {KeyName.Format(inputMods, inputVk)} 注册失败（可能被占用）");
-
-        message = string.Join("；", sb);
-        return sb.Count == 0;
+        SyncMouseWatch();
+        message = string.Join("；", errors);
+        return errors.Count == 0;
     }
+
+    private bool RegisterOne(int id, uint mods, uint vk, string label, Action fire, List<string> errors)
+    {
+        if (Win32.IsMouseVk(vk))
+        {
+            if (_mouseBindings.Any(b => b.Vk == vk && b.Mods == mods))
+            {
+                errors.Add($"{label}热键 {KeyName.Format(mods, vk)} 与另一个热键重复");
+                return false;
+            }
+
+            _mouseBindings.Add(new MouseBinding
+            {
+                Vk = vk,
+                Mods = mods,
+                Fire = fire,
+                // 注册瞬间已经按住时不要立刻触发一次
+                WasDown = Win32.IsKeyDown((int)vk),
+            });
+            return true;
+        }
+
+        bool ok = Win32.RegisterHotKey(_source.Handle, id, mods | Win32.MOD_NOREPEAT, vk);
+        if (!ok) errors.Add($"{label}热键 {KeyName.Format(mods, vk)} 注册失败（可能被占用）");
+        return ok;
+    }
+
+    // ---------------- 鼠标键轮询 ----------------
+
+    private void SyncMouseWatch()
+    {
+        if (_mouseBindings.Count == 0)
+        {
+            _mouseTimer?.Stop();
+            _mouseTimer = null;
+            return;
+        }
+
+        if (_mouseTimer != null) return;
+        _mouseTimer = new DispatcherTimer(DispatcherPriority.Input)
+        {
+            Interval = TimeSpan.FromMilliseconds(MousePollIntervalMs),
+        };
+        _mouseTimer.Tick += (_, _) => PollMouse();
+        _mouseTimer.Start();
+        Log.Info($"鼠标键热键轮询已启动：{_mouseBindings.Count} 项，{MousePollIntervalMs} ms");
+    }
+
+    private void PollMouse()
+    {
+        if (_mouseBindings.Count == 0) return;
+
+        uint mods = CurrentMods();
+        foreach (var b in _mouseBindings)
+        {
+            // 修饰键必须与绑定时完全一致，且只响应“按下”边沿
+            bool down = Win32.IsKeyDown((int)b.Vk) && mods == b.Mods;
+            if (down && !b.WasDown)
+            {
+                b.WasDown = true;
+                try
+                {
+                    b.Fire();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("鼠标热键回调异常: " + ex);
+                }
+
+                continue;
+            }
+
+            b.WasDown = down;
+        }
+    }
+
+    private static uint CurrentMods()
+    {
+        uint mods = 0;
+        if (Win32.IsKeyDown(Win32.VK_CONTROL)) mods |= Win32.MOD_CONTROL;
+        if (Win32.IsKeyDown(Win32.VK_MENU)) mods |= Win32.MOD_ALT;
+        if (Win32.IsKeyDown(Win32.VK_SHIFT)) mods |= Win32.MOD_SHIFT;
+        if (Win32.IsKeyDown(Win32.VK_LWIN) || Win32.IsKeyDown(Win32.VK_RWIN)) mods |= Win32.MOD_WIN;
+        return mods;
+    }
+
+    // ---------------- 窗口消息 ----------------
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -69,6 +173,11 @@ public sealed class HotkeyManager : IDisposable
 
     public void Unregister()
     {
+        _mouseTimer?.Stop();
+        _mouseTimer = null;
+        _mouseBindings.Clear();
+
+        // 鼠标键绑定不会调用 RegisterHotKey，这里注销失败无副作用
         if (_translateRegistered)
         {
             Win32.UnregisterHotKey(_source.Handle, IdTranslate);
