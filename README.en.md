@@ -11,7 +11,7 @@ A real-time chat translator for PC games. It captures a chosen screen region wit
 - Click-through overlay that never steals focus and is excluded from screen capture (so it never translates itself)
 - UI switchable between **简体中文 / English**; translation direction and target API are dropdowns
 
-Current version: **1.3.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
+Current version: **1.4.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
 
 ## Contents
 

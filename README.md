@@ -11,7 +11,7 @@
 - 叠加层点击穿透、不抢占焦点，并从屏幕截图中排除（不会把译文再次识别）
 - 界面支持**简体中文 / English** 切换；翻译方向与目标 API 均为下拉选择
 
-当前版本：**1.3.0**　·　项目主页：[github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans)　·　QQ 群：**419733401**　·　Bilibili：[ab_Roy 的个人空间](https://m.bilibili.com/space/51952428)
+当前版本：**1.4.0**　·　项目主页：[github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans)　·　QQ 群：**419733401**　·　Bilibili：[ab_Roy 的个人空间](https://m.bilibili.com/space/51952428)
 
 ## 目录
 
