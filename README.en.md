@@ -40,7 +40,7 @@ Current version: **1.3.0** · Project: [github.com/ab-Royo/GameTrans](https://gi
 | UI language | One-click 简体中文 / English switch in Settings; every UI string updates immediately |
 | Translation direction | Source: auto / Chinese / English / Korean / Japanese; target: Chinese / English / Korean / Japanese (screen and F9 directions are independent) |
 | Target API | DeepSeek China / DeepSeek International, default follows the UI language, with links to the open platform, API docs and website |
-| Hotkey binding | Keyboard keys plus mouse middle button, side button 1 and side button 2, optionally with `Ctrl` / `Alt` / `Shift` |
+| Hotkey binding | Keyboard keys plus mouse middle button, side button 1 and side button 2, optionally with `Ctrl` / `Alt` / `Shift`; a polling fallback kicks in when registration fails or a game swallows the key |
 | Overlay style | Background color/opacity, text color, font family/size, padding, corner radius, border and alignment are configurable |
 | Overflow strategy | Extend downward by default (same font size), or shrink to fit the region |
 | Glossary | Hand-maintained term → meaning table injected into the prompt to constrain game-specific wording |
@@ -155,7 +155,8 @@ Entry: Settings → **Hotkeys & capture region**.
 - Click **Translate hotkey** or **Input hotkey**, then press the desired combination; press `Esc` to cancel recording.
 - Keyboard keys (letters, digits, F-keys, arrows, `Home` / `End`, etc.) and three mouse buttons are supported: **middle button**, **side button 1** and **side button 2**.
 - `Ctrl` / `Alt` / `Shift` / `Win` modifiers can be combined, e.g. `Ctrl+Mouse Side 1`.
-- Keyboard hotkeys go through `RegisterHotKey`, so the system routes them to this app. Mouse buttons can only be polled and cannot be intercepted, so **if the game binds the same mouse button, both respond**.
+- Keyboard hotkeys are registered with `RegisterHotKey` first, with a `GetAsyncKeyState` poll every 15 ms as a fallback: some games (DirectInput / exclusive fullscreen) keep keys away from the message pump, so registration may succeed while `WM_HOTKEY` never arrives — or the hotkey is already owned by another program. The two channels de-duplicate the same physical press, so nothing fires twice; no global keyboard hook is installed.
+- Mouse buttons can only be polled and cannot be intercepted, so **if the game binds the same mouse button, both respond**.
 
 ### Glossary / slang table
 
@@ -268,8 +269,8 @@ dist\GameTrans.exe --selftest .\out
 
 ## FAQ
 
-**Hotkeys do nothing**
-Another app already owns the shortcut. Settings reports the registration result on save; use a combination with modifiers (e.g. `Ctrl+Alt+F8`). Mouse middle / side buttons cannot be registered with `RegisterHotKey` and are polled instead: if the game binds the same button, both respond, so add a modifier to the mouse binding.
+**Hotkeys do nothing (single-key F8 / F9 ignored by some games)**
+Usually another program owns the hotkey (the game itself, recording/overlay tools, mouse drivers). Since 1.4.0 the app switches to a polling fallback automatically when `RegisterHotKey` fails or its callback never arrives, and says so in a toast; single keys generally keep working. If the game also binds the same key and both react, use a combination with modifiers (e.g. `Ctrl+F8`, `Alt+F9`). Mouse middle / side buttons cannot be registered with `RegisterHotKey` and are always polled.
 
 **F9 result box does not close on Enter / copy fails**
 The clipboard is occupied by another program (accelerators and recording/overlay tools poll it regularly). Since 1.2.0 the copy waits at most 250 ms, reports the failure in the status bar and closes the box immediately instead of freezing the UI; press Enter again later to retry the copy.

@@ -157,10 +157,25 @@ public sealed class TrayApp : IDisposable
 
     private void ApplyHotkeys(bool notify)
     {
-        bool ok = _hotkeys.Register(_settings.Hotkeys.TranslateMods, _settings.Hotkeys.TranslateVk,
-            _settings.Hotkeys.InputMods, _settings.Hotkeys.InputVk, out var msg);
-        if (!ok && notify) Toast(msg, true);
-        Log.Info($"热键注册: {_settings.Hotkeys.TranslateText} / {_settings.Hotkeys.InputText} -> {ok}");
+        var result = _hotkeys.Register(_settings.Hotkeys.TranslateMods, _settings.Hotkeys.TranslateVk,
+            _settings.Hotkeys.InputMods, _settings.Hotkeys.InputVk);
+
+        if (result.HasError)
+        {
+            if (notify && !string.IsNullOrEmpty(result.Message)) Toast(result.Message, true);
+            Log.Warn("热键配置错误: " + result.Message);
+        }
+        else if (!result.AllNativeRegistered)
+        {
+            // 轮询兜底不算错误：功能仍可用，只是提示用户按键可能被其他程序占用
+            if (notify && !string.IsNullOrEmpty(result.Message)) Toast(result.Message, false);
+            Log.Warn("热键兼容模式: " + result.Message);
+        }
+
+        Log.Info($"热键注册: {_settings.Hotkeys.TranslateText} / {_settings.Hotkeys.InputText} " +
+                 $"-> activate={result.AllNativeRegistered} " +
+                 $"(translate native={_hotkeys.TranslateRegisteredNatively}, " +
+                 $"input native={_hotkeys.InputRegisteredNatively})");
     }
 
     private static void Toast(string text, bool error) => ToastWindow.ShowToast(text, error);
