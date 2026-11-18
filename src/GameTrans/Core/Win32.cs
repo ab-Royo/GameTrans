@@ -126,11 +126,70 @@ internal static class Win32
     public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx,
         int cy, uint uFlags);
 
+    public const uint SWP_NOSIZE = 0x0001;
+    public const uint SWP_NOMOVE = 0x0002;
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_SHOWWINDOW = 0x0040;
 
+    /// <summary>HWND_TOPMOST 常量值。</summary>
+    public static readonly IntPtr HWND_TOPMOST = new(-1);
+
     public static bool IsWindowVisibleSafe(IntPtr hWnd) => hWnd != IntPtr.Zero && IsWindow(hWnd);
+
+    // ---------- 前台激活 ----------
+    // 游戏（无边框 / 独占全屏）会持前台锁，非前台进程直接调用 SetForegroundWindow 通常失败，
+    // 表现为「窗口看得见，但键盘焦点还在游戏里」——Enter / Esc 送不到本程序，窗口关不掉。
+    // 标准做法：先让自己线程 AttachThreadInput 到当前前台窗口线程，再 SetForegroundWindow。
+
+    [DllImport("kernel32.dll")]
+    public static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("user32.dll")]
+    public static extern bool BringWindowToTop(IntPtr hWnd);
+
+    /// <summary>
+    /// 尽力把窗口切到前台（绕开 Windows 前台锁）。成功以 <c>GetForegroundWindow()==hwnd</c> 为准。
+    /// </summary>
+    public static bool ForceForeground(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !IsWindow(hwnd)) return false;
+        if (GetForegroundWindow() == hwnd) return true;
+
+        uint currentThread = GetCurrentThreadId();
+        uint targetThread = GetWindowThreadProcessId(hwnd, out _);
+        IntPtr foreground = GetForegroundWindow();
+        uint foregroundThread = foreground != IntPtr.Zero ? GetWindowThreadProcessId(foreground, out _) : 0;
+
+        bool attachedTarget = false;
+        bool attachedForeground = false;
+        try
+        {
+            if (targetThread != 0 && targetThread != currentThread)
+                attachedTarget = AttachThreadInput(currentThread, targetThread, true);
+            if (foregroundThread != 0 && foregroundThread != currentThread && foregroundThread != targetThread)
+                attachedForeground = AttachThreadInput(currentThread, foregroundThread, true);
+
+            bool ok = SetForegroundWindow(hwnd);
+            if (!ok) ok = BringWindowToTop(hwnd);
+            return ok && GetForegroundWindow() == hwnd;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (attachedForeground) AttachThreadInput(currentThread, foregroundThread, false);
+            if (attachedTarget) AttachThreadInput(currentThread, targetThread, false);
+        }
+    }
 
     // ---------- 全局热键 ----------
     public const int WM_HOTKEY = 0x0312;

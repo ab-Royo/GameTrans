@@ -124,7 +124,10 @@ F9 ─► translucent input box anchored to the capture region
 
 The direction comes from the **Input translation** source / target languages; default `Chinese → English`, independent of the screen direction.
 
-If the clipboard is temporarily occupied by another app (some accelerators and recording/overlay tools poll it), the status bar says "Clipboard busy; not copied" and Enter still closes the box immediately.
+- The box actively grabs foreground keyboard focus. In games (borderless / exclusive fullscreen) a plain `Activate()` may be refused, so Enter / Esc would go to the game and the box could not be closed. Since 1.4.0 it uses `AttachThreadInput + SetForegroundWindow` with a short retry window, and stops retrying as soon as you switch back to the game.
+- `Esc` / `Enter` work anywhere in the window (even after clicking a button). The window is positioned in physical pixels, so per-monitor DPI no longer causes "visible but unclickable" offsets.
+- After a successful translation the box **always** auto-closes: 3 s when the copy succeeded, 5 s when the clipboard was busy (Enter retries the copy and closes immediately). Any key cancels the pending auto-close.
+- If the clipboard is temporarily occupied by another app, the status bar says "Clipboard busy; not copied" and Enter still closes the box immediately.
 
 ### UI language
 
@@ -272,8 +275,8 @@ dist\GameTrans.exe --selftest .\out
 **Hotkeys do nothing (single-key F8 / F9 ignored by some games)**
 Usually another program owns the hotkey (the game itself, recording/overlay tools, mouse drivers). Since 1.4.0 the app switches to a polling fallback automatically when `RegisterHotKey` fails or its callback never arrives, and says so in a toast; single keys generally keep working. If the game also binds the same key and both react, use a combination with modifiers (e.g. `Ctrl+F8`, `Alt+F9`). Mouse middle / side buttons cannot be registered with `RegisterHotKey` and are always polled.
 
-**F9 result box does not close on Enter / copy fails**
-The clipboard is occupied by another program (accelerators and recording/overlay tools poll it regularly). Since 1.2.0 the copy waits at most 250 ms, reports the failure in the status bar and closes the box immediately instead of freezing the UI; press Enter again later to retry the copy.
+**F9 box cannot be closed / Enter or Esc do nothing / close button hard to hit**
+Fixed in 1.4.0: the box might never get real foreground focus in a game (the game holds the foreground lock), so Enter / Esc went to the game; and the old code only armed the 3 s auto-close when the copy succeeded, so a busy clipboard left the box open forever. The box now force-activates with a short retry, handles Enter / Esc at window level, always auto-closes after a successful translation (5 s when the copy failed), keeps status text from covering the buttons, and is positioned in physical pixels. If it still does not close, exit from the tray, restart, and attach `%APPDATA%\GameTrans\GameTrans.log` to your report.
 
 **Nothing changed after switching to English?**
 The language applies immediately and the Settings window rebuilds in place. Other open windows (startup page, input box) apply it the next time they open; if the startup page is open, it is rebuilt after saving. Make sure you clicked **Save**.
