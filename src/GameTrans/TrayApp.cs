@@ -16,11 +16,24 @@ public sealed class TrayApp : IDisposable
     private readonly HotkeyManager _hotkeys = new();
     private NotifyIcon? _tray;
     private OverlayWindow? _overlay;
+    private InputWindow? _inputWindow;
     private SettingsWindow? _settingsWindow;
     private StartupWindow? _startup;
     private AppSettings _settings;
     private CancellationTokenSource? _cts;
     private bool _disposed;
+
+    /// <summary>选区窗口是模态的：正在选区时忽略热键，避免连按叠出多个选区窗口。</summary>
+    private bool _regionPicking;
+
+    /// <summary>
+    /// 同一次按键可能同时被 RegisterHotKey 与轮询兜底看到（极少数线程繁忙时会跨通道重复），
+    /// 这里再做一次 180 ms 去抖，确保连按只响应一次、不会叠窗口。
+    /// </summary>
+    private const long DuplicatePressWindowMs = 180;
+
+    private long _lastTranslateFireTick;
+    private long _lastInputFireTick;
 
     public TrayApp(AppSettings settings)
     {
@@ -199,31 +212,54 @@ public sealed class TrayApp : IDisposable
 
     private bool PickRegion(bool showToast)
     {
-        var current = _settings.Region.IsUsable
-            ? new RegionPx(_settings.Region.Left, _settings.Region.Top, _settings.Region.Right,
-                _settings.Region.Bottom)
-            : (RegionPx?)null;
-
-        var picked = RegionSelectorWindow.Pick(current);
-        if (picked is not { IsUsable: true })
+        // 选区窗口是 ShowDialog 模态：它有自己的消息循环，热键仍会被派发到这里。
+        // 不做防重入的话，快速连按 F8/F9 会在选区窗口之上再叠一个选区窗口。
+        if (_regionPicking) return false;
+        _regionPicking = true;
+        try
         {
-            if (showToast) Toast(Loc.T("已取消选区操作", "Region selection cancelled"), false);
-            return false;
-        }
+            var current = _settings.Region.IsUsable
+                ? new RegionPx(_settings.Region.Left, _settings.Region.Top, _settings.Region.Right,
+                    _settings.Region.Bottom)
+                : (RegionPx?)null;
 
-        _settings.Region.HasRegion = true;
-        _settings.Region.Left = picked.Value.Left;
-        _settings.Region.Top = picked.Value.Top;
-        _settings.Region.Right = picked.Value.Right;
-        _settings.Region.Bottom = picked.Value.Bottom;
-        SettingsStore.Save(_settings);
-        Toast(Loc.F("识别区域已更新：{0} × {1}", "Capture region updated: {0} × {1}", _settings.Region.Width, _settings.Region.Height), false);
-        return true;
+            var picked = RegionSelectorWindow.Pick(current);
+            if (picked is not { IsUsable: true })
+            {
+                if (showToast) Toast(Loc.T("已取消选区操作", "Region selection cancelled"), false);
+                return false;
+            }
+
+            _settings.Region.HasRegion = true;
+            _settings.Region.Left = picked.Value.Left;
+            _settings.Region.Top = picked.Value.Top;
+            _settings.Region.Right = picked.Value.Right;
+            _settings.Region.Bottom = picked.Value.Bottom;
+            SettingsStore.Save(_settings);
+            Toast(Loc.F("识别区域已更新：{0} × {1}", "Capture region updated: {0} × {1}", _settings.Region.Width, _settings.Region.Height), false);
+            return true;
+        }
+        finally
+        {
+            _regionPicking = false;
+        }
+    }
+
+    /// <summary>同一次按键的重复投递去抖：连按（或两条热键通道同时命中）时只响应第一次。</summary>
+    private static bool IsDuplicatePress(ref long lastTick)
+    {
+        long now = Environment.TickCount64;
+        if (now - lastTick < DuplicatePressWindowMs) return true;
+        lastTick = now;
+        return false;
     }
 
     /// <summary>F8：显示中则隐藏；否则截图→识别→叠加显示。</summary>
     private void TranslateHotkey()
     {
+        if (IsDuplicatePress(ref _lastTranslateFireTick)) return;
+        if (_regionPicking) return;
+
         if (_overlay is { IsVisible: true })
         {
             _cts?.Cancel();
@@ -293,9 +329,18 @@ public sealed class TrayApp : IDisposable
         }
     }
 
-    /// <summary>F9：在选区下方展开输入框。</summary>
+    /// <summary>F9：在选区下方展开输入框；已打开时只把它重新拉到前台，不叠新窗口。</summary>
     private void InputHotkey()
     {
+        if (IsDuplicatePress(ref _lastInputFireTick)) return;
+        if (_regionPicking) return;
+
+        if (_inputWindow is { IsVisible: true } opened)
+        {
+            opened.Reactivate();
+            return;
+        }
+
         if (!EnsureRegion()) return;
         if (!EnsureApiKey()) return;
 
@@ -303,9 +348,14 @@ public sealed class TrayApp : IDisposable
             _settings.Region.Right, _settings.Region.Bottom);
 
         var w = new InputWindow(_settings, _client, ApiKey, region);
+        _inputWindow = w;
+        w.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_inputWindow, w)) _inputWindow = null;
+        };
         w.RememberForeground();
         w.Show();
-        w.Activate();
+        w.Reactivate();
     }
 
     private void ShowStartup()
@@ -403,6 +453,7 @@ public sealed class TrayApp : IDisposable
             _cts?.Cancel();
             _cts?.Dispose();
             _hotkeys.Dispose();
+            _inputWindow?.Close();
             _overlay?.Close();
             if (_tray != null)
             {

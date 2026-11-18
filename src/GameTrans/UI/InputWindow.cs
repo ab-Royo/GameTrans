@@ -294,6 +294,22 @@ public sealed class InputWindow : Window
         _prevForeground = Win32.GetForegroundWindow();
     }
 
+    /// <summary>把已打开的输入窗重新拉到前台并聚焦输入框（再次按 F9 时调用，不叠新窗口）。</summary>
+    public void Reactivate()
+    {
+        if (!IsVisible) return;
+        try
+        {
+            Activate();
+            _input.Focus();
+            Keyboard.Focus(_input);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("输入框重新激活失败: " + ex.Message);
+        }
+    }
+
     private void RestoreForeground()
     {
         try
