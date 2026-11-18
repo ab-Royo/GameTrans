@@ -11,7 +11,7 @@ A real-time chat translator for PC games. It captures a chosen screen region wit
 - Click-through overlay that never steals focus and is excluded from screen capture (so it never translates itself)
 - UI switchable between **简体中文 / English**; translation direction and target API are dropdowns
 
-Current version: **1.4.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
+Current version: **1.4.1** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
 
 ## Contents
 
@@ -168,7 +168,7 @@ Entry: Settings → **Hotkeys & capture region**.
 - Click **Translate hotkey** or **Input hotkey**, then press the desired combination; press `Esc` to cancel recording.
 - Keyboard keys (letters, digits, F-keys, arrows, `Home` / `End`, etc.) and three mouse buttons are supported: **middle button**, **side button 1** and **side button 2**.
 - `Ctrl` / `Alt` / `Shift` / `Win` modifiers can be combined, e.g. `Ctrl+Mouse Side 1`.
-- Keyboard hotkeys are registered with `RegisterHotKey` first, with a `GetAsyncKeyState` poll every 15 ms as a fallback: some games (DirectInput / exclusive fullscreen) keep keys away from the message pump, so registration may succeed while `WM_HOTKEY` never arrives — or the hotkey is already owned by another program. The two channels de-duplicate the same physical press, so nothing fires twice; no global keyboard hook is installed.
+- Keyboard hotkeys are registered with `RegisterHotKey` first, with a `GetAsyncKeyState` poll every 15 ms on a dedicated background thread as a fallback: some games (DirectInput / exclusive fullscreen) keep keys away from the message pump, so registration may succeed while `WM_HOTKEY` never arrives — or the hotkey is already owned by another program. The two channels de-duplicate the same physical press, so nothing fires twice; no global keyboard hook is installed.
 - Mouse buttons can only be polled and cannot be intercepted, so **if the game binds the same mouse button, both respond**.
 
 ### Glossary / slang table

@@ -8,15 +8,20 @@ namespace GameTrans.Core;
 /// 键盘键优先走 <c>RegisterHotKey</c>，同时用 <c>GetAsyncKeyState</c> 低频轮询兜底：
 ///   · 部分游戏使用 DirectInput / 独占全屏，按键不经过消息泵，注册成功也可能收不到 <c>WM_HOTKEY</c>；
 ///   · 热键可能已被其他程序独占（<c>RegisterHotKey</c> 直接失败）。
-/// 两条通道对同一次物理按键只触发一次（按毫秒时间窗去重），因此按下一次不会重复弹窗。
+/// 两条通道对同一次物理按键只触发一次（按毫秒时间窗去重），因此按下一次不会重复触发。
 /// 鼠标中键 / 侧键1 / 侧键2 无法通过 <c>RegisterHotKey</c> 注册（Windows 不支持鼠标按钮热键），只走轮询。
-/// 全程不安装任何全局钩子（不使用 <c>SetWindowsHookEx</c>），不触碰反作弊关注的输入注入链路。
+///
+/// 轮询运行在专用后台线程上，使用 <see cref="Thread"/> + <see cref="ManualResetEventSlim"/> 定时唤醒，
+/// 不占用 WPF 的 Dispatcher 消息循环：空闲时只有一次只读的状态查询，命中按键后才通过
+/// Dispatcher 把回调派发到 UI 线程。全程不安装任何全局钩子（不使用 <c>SetWindowsHookEx</c>），
+/// 不触碰反作弊关注的输入注入链路。
 /// </summary>
 public sealed class HotkeyManager : IDisposable
 {
     private const int IdTranslate = 0x4A01;
     private const int IdInput = 0x4A02;
     private const int PollIntervalMs = 15;
+    private const string PollThreadName = "GameTrans.HotkeyPoll";
 
     /// <summary>轮询发现按下时，若原生 WM_HOTKEY 刚触发过同一次按键则跳过（毫秒）。</summary>
     private const long NativeHandledWindowMs = 80;
@@ -25,8 +30,13 @@ public sealed class HotkeyManager : IDisposable
     private const long PollHandledWindowMs = 400;
 
     private readonly HwndSource _source;
-    private readonly List<Binding> _bindings = new();
-    private DispatcherTimer? _timer;
+    private readonly Dispatcher _dispatcher;
+
+    /// <summary>当前绑定的不可变快照：UI 线程整体替换，轮询线程只读，避免跨线程遍历可变集合。</summary>
+    private Binding[] _bindings = Array.Empty<Binding>();
+
+    private Thread? _pollThread;
+    private ManualResetEventSlim? _pollStop;
     private long _suspendUntilTick;
 
     public event Action? TranslatePressed;
@@ -47,8 +57,14 @@ public sealed class HotkeyManager : IDisposable
         public string Label = "";
         public bool IsMouse;
         public bool RegisteredNatively;
-        public bool WasDown;
+
+        /// <summary>上一轮轮询时的按下状态（0/1），由轮询线程独占写入。</summary>
+        public int WasDown;
+
+        /// <summary>最后一次原生 WM_HOTKEY 触发时间；UI 线程写入、轮询线程读取。</summary>
         public long LastNativeFireTick;
+
+        /// <summary>最后一次轮询触发时间；轮询线程写入、UI 线程读取。</summary>
         public long LastPollFireTick;
     }
 
@@ -63,6 +79,7 @@ public sealed class HotkeyManager : IDisposable
         };
         _source = new HwndSource(p);
         _source.AddHook(WndProc);
+        _dispatcher = _source.Dispatcher;
     }
 
     /// <summary>
@@ -74,16 +91,18 @@ public sealed class HotkeyManager : IDisposable
         Unregister();
         var errors = new List<string>();
         var notes = new List<string>();
+        var bindings = new List<Binding>(2);
 
-        var translate = AddBinding(IdTranslate, translateMods, translateVk, Loc.T("翻译", "Translate"),
-            () => TranslatePressed?.Invoke(), errors, notes);
-        var input = AddBinding(IdInput, inputMods, inputVk, Loc.T("输入", "Input"),
-            () => InputPressed?.Invoke(), errors, notes);
+        var translate = AddBinding(bindings, IdTranslate, translateMods, translateVk,
+            Loc.T("翻译", "Translate"), () => TranslatePressed?.Invoke(), errors, notes);
+        var input = AddBinding(bindings, IdInput, inputMods, inputVk,
+            Loc.T("输入", "Input"), () => InputPressed?.Invoke(), errors, notes);
 
         TranslateRegisteredNatively = translate is { IsMouse: false, RegisteredNatively: true };
         InputRegisteredNatively = input is { IsMouse: false, RegisteredNatively: true };
 
-        SyncPollTimer();
+        Volatile.Write(ref _bindings, bindings.ToArray());
+        SyncPollThread();
 
         var parts = new List<string>();
         parts.AddRange(errors);
@@ -96,7 +115,7 @@ public sealed class HotkeyManager : IDisposable
         };
     }
 
-    private Binding? AddBinding(int id, uint mods, uint vk, string label, Action fire,
+    private Binding? AddBinding(List<Binding> bindings, int id, uint mods, uint vk, string label, Action fire,
         List<string> errors, List<string> notes)
     {
         if (vk == 0)
@@ -106,11 +125,11 @@ public sealed class HotkeyManager : IDisposable
         }
 
         // 重复绑定检测：同一按键 + 同一修饰键只允许绑定一个动作
-        var duplicate = _bindings.FirstOrDefault(b => b.Vk == vk && b.Mods == mods);
-        if (duplicate != null)
+        foreach (var existing in bindings)
         {
+            if (existing.Vk != vk || existing.Mods != mods) continue;
             errors.Add(Loc.F("{0}热键 {1} 与{2}热键重复", "{0} hotkey {1} duplicates the {2} hotkey",
-                label, KeyName.Format(mods, vk), duplicate.Label));
+                label, KeyName.Format(mods, vk), existing.Label));
             return null;
         }
 
@@ -123,9 +142,9 @@ public sealed class HotkeyManager : IDisposable
             Label = label,
             IsMouse = Win32.IsMouseVk(vk),
             // 注册瞬间已经按住时不要立刻触发一次
-            WasDown = Win32.IsKeyDown((int)vk),
+            WasDown = Win32.IsKeyDown((int)vk) ? 1 : 0,
         };
-        _bindings.Add(binding);
+        bindings.Add(binding);
 
         // 鼠标键注册不会产生 WM_HOTKEY，只依赖轮询
         if (binding.IsMouse) return binding;
@@ -149,55 +168,148 @@ public sealed class HotkeyManager : IDisposable
     public void SuspendFor(int milliseconds)
     {
         long until = Environment.TickCount64 + Math.Clamp(milliseconds, 0, 60_000);
-        if (until > _suspendUntilTick) _suspendUntilTick = until;
+        while (true)
+        {
+            long current = Volatile.Read(ref _suspendUntilTick);
+            if (until <= current) return;
+            if (Interlocked.CompareExchange(ref _suspendUntilTick, until, current) == current) return;
+        }
     }
 
-    private bool IsSuspended => Environment.TickCount64 < _suspendUntilTick;
+    private bool IsSuspended => Environment.TickCount64 < Volatile.Read(ref _suspendUntilTick);
 
-    // ---------------- 轮询（鼠标键 + 键盘兜底） ----------------
+    // ---------------- 轮询线程（鼠标键 + 键盘兜底） ----------------
 
-    private void SyncPollTimer()
+    private void SyncPollThread()
     {
-        if (_bindings.Count == 0)
+        bool needed = Volatile.Read(ref _bindings).Length > 0;
+        if (!needed)
         {
-            _timer?.Stop();
-            _timer = null;
+            StopPollThread();
             return;
         }
 
-        if (_timer != null) return;
-        _timer = new DispatcherTimer(DispatcherPriority.Input)
+        if (_pollThread != null) return;
+
+        var stop = new ManualResetEventSlim(false);
+        _pollStop = stop;
+        var thread = new Thread(() => PollLoop(stop))
         {
-            Interval = TimeSpan.FromMilliseconds(PollIntervalMs),
+            IsBackground = true,
+            Name = PollThreadName,
         };
-        _timer.Tick += (_, _) => Poll();
-        _timer.Start();
-        Log.Info($"热键轮询已启动：{_bindings.Count} 项，{PollIntervalMs} ms");
+        _pollThread = thread;
+        thread.Start();
+        Log.Info($"热键轮询线程已启动：{Volatile.Read(ref _bindings).Length} 项，{PollIntervalMs} ms，线程 {thread.ManagedThreadId}");
     }
 
-    private void Poll()
+    private void StopPollThread()
     {
-        if (_bindings.Count == 0) return;
+        var thread = _pollThread;
+        var stop = _pollStop;
+        _pollThread = null;
+        _pollStop = null;
+        if (stop == null) return;
+
+        stop.Set();
+        if (thread != null && !thread.Join(1000))
+            Log.Warn("热键轮询线程未在 1 秒内退出，后续注册可能短暂存在两个轮询线程");
+        try
+        {
+            stop.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("释放轮询线程信号量失败: " + ex.Message);
+        }
+    }
+
+    private void PollLoop(ManualResetEventSlim stop)
+    {
+        while (true)
+        {
+            try
+            {
+                PollOnce();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("热键轮询异常: " + ex);
+            }
+
+            bool stopped;
+            try
+            {
+                stopped = stop.Wait(PollIntervalMs);
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (stopped) return;
+        }
+    }
+
+    private void PollOnce()
+    {
+        var bindings = Volatile.Read(ref _bindings);
+        if (bindings.Length == 0) return;
 
         bool suspended = IsSuspended;
         uint mods = CurrentMods();
         long now = Environment.TickCount64;
 
-        foreach (var b in _bindings)
+        foreach (var b in bindings)
         {
             // 修饰键必须与绑定时完全一致，且只响应「按下」边沿
             bool down = Win32.IsKeyDown((int)b.Vk) && mods == b.Mods;
-            if (down && !b.WasDown)
+            bool wasDown = Volatile.Read(ref b.WasDown) != 0;
+            if (down && !wasDown)
             {
-                b.WasDown = true;
+                Volatile.Write(ref b.WasDown, 1);
                 if (suspended) continue;
                 // 同一次按下已由 WM_HOTKEY 处理过 → 去重
-                if (!b.IsMouse && now - b.LastNativeFireTick < NativeHandledWindowMs) continue;
-                Fire(b, fromPoll: true, now);
+                if (!b.IsMouse &&
+                    now - Volatile.Read(ref b.LastNativeFireTick) < NativeHandledWindowMs) continue;
+
+                Volatile.Write(ref b.LastPollFireTick, now);
+                PostFire(b, fromPoll: true);
                 continue;
             }
 
-            b.WasDown = down;
+            Volatile.Write(ref b.WasDown, down ? 1 : 0);
+        }
+    }
+
+    /// <summary>把轮询结果派发到 UI 线程执行（热键回调会操作窗口/托盘等 UI 对象）。</summary>
+    private void PostFire(Binding binding, bool fromPoll)
+    {
+        if (_dispatcher.HasShutdownStarted) return;
+
+        try
+        {
+            _dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+            {
+                // 绑定可能已在派发前被重新注册
+                if (Array.IndexOf(Volatile.Read(ref _bindings), binding) < 0) return;
+
+                long now = Environment.TickCount64;
+                if (fromPoll)
+                {
+                    // 派发期间原生通道可能已处理同一次按键 → 去重
+                    if (!binding.IsMouse &&
+                        now - Volatile.Read(ref binding.LastNativeFireTick) < NativeHandledWindowMs) return;
+                    Volatile.Write(ref binding.LastPollFireTick, now);
+                }
+
+                Fire(binding, fromPoll, now);
+            }));
+        }
+        catch (Exception ex)
+        {
+            // Dispatcher 已关闭（退出过程）时忽略
+            if (!_dispatcher.HasShutdownStarted) Log.Error("热键回调派发失败: " + ex);
         }
     }
 
@@ -214,9 +326,9 @@ public sealed class HotkeyManager : IDisposable
     private void Fire(Binding binding, bool fromPoll, long now)
     {
         if (fromPoll)
-            binding.LastPollFireTick = now;
+            Volatile.Write(ref binding.LastPollFireTick, now);
         else
-            binding.LastNativeFireTick = now;
+            Volatile.Write(ref binding.LastNativeFireTick, now);
 
         try
         {
@@ -235,16 +347,17 @@ public sealed class HotkeyManager : IDisposable
         if (msg == Win32.WM_HOTKEY)
         {
             var id = wParam.ToInt32();
-            var binding = _bindings.FirstOrDefault(b => b.Id == id);
-            if (binding != null)
+            foreach (var binding in Volatile.Read(ref _bindings))
             {
+                if (binding.Id != id) continue;
                 handled = true;
-                if (IsSuspended) return IntPtr.Zero;
+                if (IsSuspended) break;
 
                 long now = Environment.TickCount64;
                 // 轮询已经处理过同一次按下 → 去重
-                if (now - binding.LastPollFireTick < PollHandledWindowMs) return IntPtr.Zero;
+                if (now - Volatile.Read(ref binding.LastPollFireTick) < PollHandledWindowMs) break;
                 Fire(binding, fromPoll: false, now);
+                break;
             }
         }
 
@@ -253,16 +366,13 @@ public sealed class HotkeyManager : IDisposable
 
     public void Unregister()
     {
-        _timer?.Stop();
-        _timer = null;
+        Volatile.Write(ref _bindings, Array.Empty<Binding>());
+        StopPollThread();
 
-        foreach (var b in _bindings)
-        {
-            if (b.IsMouse || !b.RegisteredNatively) continue;
-            Win32.UnregisterHotKey(_source.Handle, b.Id);
-        }
+        // 只注销原生注册成功的键盘热键（鼠标键未注册）
+        if (TranslateRegisteredNatively) Win32.UnregisterHotKey(_source.Handle, IdTranslate);
+        if (InputRegisteredNatively) Win32.UnregisterHotKey(_source.Handle, IdInput);
 
-        _bindings.Clear();
         TranslateRegisteredNatively = false;
         InputRegisteredNatively = false;
     }

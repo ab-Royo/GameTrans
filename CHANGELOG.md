@@ -2,6 +2,14 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.1
+
+### 变更
+
+- 热键轮询由 WPF `DispatcherTimer` 改为专用后台线程（`GameTrans.HotkeyPoll`，`ManualResetEventSlim.Wait(15)` 定时唤醒；命中按键后才通过 `Dispatcher.BeginInvoke` 派发到 UI 线程）。空闲时不再占用 WPF 消息循环，实测进程空闲 CPU 时间由约 11 ms/s 降至约 3 ms/s（Ryzen 9 8945HX / 32 逻辑核）；热键触发行为、两条通道的毫秒级去重与注册失败兜底逻辑均保持不变。
+- 轮询线程随热键注册启停，退出时通过信号量唤醒并 `Join`；绑定表改为不可变快照，按键状态与通道时间戳使用 `Volatile` / `Interlocked` 访问，避免跨线程锁竞争。
+- README、README.en、docs/DESIGN 补充轮询的执行位置与开销说明。
+
 ## 1.4.0
 
 ### 新增
