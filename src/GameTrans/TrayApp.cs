@@ -347,7 +347,7 @@ public sealed class TrayApp : IDisposable
         var region = new RegionPx(_settings.Region.Left, _settings.Region.Top,
             _settings.Region.Right, _settings.Region.Bottom);
 
-        var w = new InputWindow(_settings, _client, ApiKey, region);
+        var w = new InputWindow(_settings, _client, ApiKey, region, _hotkeys.SuspendFor);
         _inputWindow = w;
         w.Closed += (_, _) =>
         {

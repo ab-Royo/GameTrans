@@ -217,6 +217,12 @@ public sealed class BehaviorOptions
 
     /// <summary>F9 结果自动写入剪贴板。</summary>
     public bool CopyInputResult { get; set; } = true;
+
+    /// <summary>
+    /// 模拟输入：F9 翻译完成后直接把译文用模拟键盘键入游戏，不写入剪贴板（默认关闭）。
+    /// 适合游戏里无法粘贴、或粘贴会触发反作弊提示的场景；需要游戏聊天输入框处于打开状态。
+    /// </summary>
+    public bool SimulateInput { get; set; }
 }
 
 public sealed class GlossaryEntry

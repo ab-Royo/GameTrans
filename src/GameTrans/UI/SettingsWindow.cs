@@ -385,6 +385,15 @@ public sealed class SettingsWindow : Window
         var sys = Theme.T(_s.Prompt.SystemPrompt, double.NaN, true, 5);
         sys.TextChanged += (_, _) => _s.Prompt.SystemPrompt = sys.Text;
 
+        var simulate = Theme.Chk(
+            Loc.T("模拟输入：F9 译文直接键入游戏（不写剪贴板）",
+                "Simulated input: type the F9 result into the game (no clipboard)"),
+            _s.Behavior.SimulateInput, v => _s.Behavior.SimulateInput = v);
+        var simulateHint = Theme.L(Loc.T(
+            "开启后，F9 翻译完成会把译文自动模拟键入当前游戏窗口；请先在游戏里打开聊天输入框，程序不会自动按 Enter 发送。默认关闭，使用「复制到剪贴板 + 手动粘贴」。",
+            "When enabled, the F9 translation is typed into the current game window by simulated keystrokes; open the in-game chat box first — the app does not press Enter for you. Off by default (clipboard + manual paste)."),
+            12, Theme.Sub);
+
         return Theme.Card(Loc.T("翻译行为", "Translation"),
             Theme.Field(Loc.T("目标游戏", "Target game"), gameBox, LabelW),
             Theme.L(Loc.T("写入提示词，用于约束该作品的术语与语气；切换作品时仅需修改此项",
@@ -396,6 +405,9 @@ public sealed class SettingsWindow : Window
             Theme.Field(Loc.T("输入翻译", "Input translation"), Theme.Row(10, inSrc,
                 Theme.L("→", 13, Theme.Sub), inDst,
                 Theme.L(Loc.T("F9：输入源语言 → 目标语言", "F9: source → target"), 12, Theme.Sub)), LabelW),
+            simulate,
+            simulateHint,
+            new Border { Height = 8 },
             Theme.Field(Loc.T("输出模式", "Output mode"), mode, LabelW),
             modeHint,
             Theme.Field(Loc.T("术语表", "Glossary"), glossBtn!, LabelW),

@@ -33,20 +33,27 @@ public sealed class InputWindow : Window
     private readonly TextBox _input;
     private readonly TextBlock _status;
     private readonly Button _sendBtn;
+    private readonly Action<int>? _suspendHotkeys;
     private bool _busy;
     private bool _hasResult;
     private bool _closing;
+    private bool _simulating;
     private bool _placing;
     private IntPtr _prevForeground;
     private DispatcherTimer? _autoClose;
     private DispatcherTimer? _foregroundRetry;
 
-    public InputWindow(AppSettings settings, DeepSeekClient client, string apiKey, RegionPx region)
+    /// <param name="suspendHotkeys">
+    /// 模拟键入前临时挂起热键（传入毫秒数）。由 TrayApp 注入；离屏演示等场景可为 null。
+    /// </param>
+    public InputWindow(AppSettings settings, DeepSeekClient client, string apiKey, RegionPx region,
+        Action<int>? suspendHotkeys = null)
     {
         _settings = settings;
         _client = client;
         _apiKey = apiKey;
         _region = region;
+        _suspendHotkeys = suspendHotkeys;
 
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
@@ -312,7 +319,11 @@ public sealed class InputWindow : Window
         else _ = TranslateAsync();
     }
 
-    private void HandleResultEnter() => CopyAndClose();
+    private void HandleResultEnter()
+    {
+        if (_settings.Behavior.SimulateInput) _ = SimulateSendAndCloseAsync(_input.Text);
+        else CopyAndClose();
+    }
 
     // ---------------- 翻译 ----------------
 
@@ -368,6 +379,17 @@ public sealed class InputWindow : Window
             _input.Text = r.Text;
             _input.SelectAll();
 
+            if (_settings.Behavior.SimulateInput)
+            {
+                // 模拟输入：不写剪贴板，短暂展示译文后直接把文字键入游戏
+                _status.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0xE0, 0x9E));
+                _status.Text = Loc.F("正在模拟输入… · {0} ms", "Typing the translation into the game… · {0} ms",
+                    r.ElapsedMs);
+                await Task.Delay(300);
+                if (!_closing) await SimulateSendAndCloseAsync(r.Text);
+                return;
+            }
+
             bool copyWanted = _settings.Behavior.CopyInputResult;
             bool copied = copyWanted && CopyToClipboard(r.Text);
 
@@ -418,6 +440,82 @@ public sealed class InputWindow : Window
             Close();
         };
         _autoClose.Start();
+    }
+
+    /// <summary>
+    /// 模拟输入：先把前台还给游戏（Closing 中的 RestoreForeground），确认游戏窗口真的回到前台后，
+    /// 用 SendInput 键入译文。目标没拿到前台时绝不往随机窗口打字，退回复制剪贴板。
+    /// </summary>
+    private async Task SimulateSendAndCloseAsync(string text)
+    {
+        if (_simulating || _closing) return;
+        _simulating = true;
+
+        string payload = InputSimulator.Sanitize(text);
+        IntPtr target = _prevForeground;
+        bool ownProcess = IsOwnProcessWindow(target);
+
+        try
+        {
+            Close(); // Closing → RestoreForeground 把前台还给游戏
+
+            if (payload.Length == 0 || target == IntPtr.Zero || ownProcess)
+            {
+                Log.Warn($"模拟输入跳过：payload={payload.Length} target=0x{target.ToInt64():X} ownProcess={ownProcess}");
+                FallbackToClipboard(text);
+                return;
+            }
+
+            // 等前台真正回到游戏（部分游戏切回需要一点时间）
+            bool focused = false;
+            for (int i = 0; i < 12; i++)
+            {
+                if (Win32.GetForegroundWindow() == target)
+                {
+                    focused = true;
+                    break;
+                }
+
+                await Task.Delay(50);
+            }
+
+            if (!focused)
+            {
+                Log.Warn($"模拟输入跳过：前台未切回目标窗口 0x{target.ToInt64():X}");
+                FallbackToClipboard(text);
+                return;
+            }
+
+            // 模拟键入期间挂起热键：译文里的字符可能命中所绑定的热键（例如绑到字母键）
+            _suspendHotkeys?.Invoke(payload.Length * 20 + 500);
+            Log.Info($"模拟输入 {payload.Length} 字 -> 窗口 0x{target.ToInt64():X}");
+
+            if (!InputSimulator.SendText(payload))
+                FallbackToClipboard(text);
+        }
+        finally
+        {
+            _simulating = false;
+        }
+    }
+
+    /// <summary>模拟输入不可用时的兜底：复制到剪贴板并提示。</summary>
+    private static void FallbackToClipboard(string text)
+    {
+        bool copied = ClipboardService.TrySetText(text);
+        ToastWindow.ShowToast(copied
+                ? Loc.T("模拟输入未执行，译文已复制到剪贴板",
+                    "Simulated input was not performed; the translation was copied to the clipboard")
+                : Loc.T("模拟输入未执行，剪贴板也被占用，请手动复制译文",
+                    "Simulated input was not performed and the clipboard is busy; copy the translation manually"),
+            true);
+    }
+
+    private static bool IsOwnProcessWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        Win32.GetWindowThreadProcessId(hwnd, out uint pid);
+        return pid != 0 && pid == (uint)Environment.ProcessId;
     }
 
     /// <summary>复制结果（带时间预算，剪贴板被占用时快速失败，不阻塞 UI）。</summary>

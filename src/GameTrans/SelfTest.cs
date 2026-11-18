@@ -54,13 +54,37 @@ internal static class SelfTest
             if (s.Prompt.TargetLanguage != Languages.Chinese) throw new Exception("默认目标语言应为中文");
             if (s.Prompt.SourceLanguage != Languages.Auto) throw new Exception("默认源语言应为 auto");
             if (s.Prompt.InputTargetLanguage != Languages.English) throw new Exception("F9 默认目标语言应为英文");
+            if (s.Behavior.SimulateInput) throw new Exception("模拟输入默认应关闭");
+            if (!s.Behavior.CopyInputResult) throw new Exception("F9 默认应自动复制到剪贴板");
 
             var json = JsonSerializer.Serialize(s, AppSettings.JsonOpts);
             var back = JsonSerializer.Deserialize<AppSettings>(json, AppSettings.JsonOpts)
                        ?? throw new Exception("反序列化失败");
             if (Math.Abs(back.Overlay.BgOpacity - s.Overlay.BgOpacity) > 1e-9) throw new Exception("往返不一致");
             if (back.Ui.Language != s.Ui.Language || back.Api.Site != s.Api.Site) throw new Exception("语言/站点未往返");
+            if (back.Behavior.SimulateInput) throw new Exception("模拟输入往返异常");
+
+            s.Behavior.SimulateInput = true;
+            var simJson = JsonSerializer.Serialize(s, AppSettings.JsonOpts);
+            var simBack = JsonSerializer.Deserialize<AppSettings>(simJson, AppSettings.JsonOpts)
+                          ?? throw new Exception("模拟输入反序列化失败");
+            if (!simBack.Behavior.SimulateInput) throw new Exception("模拟输入未往返");
             File.WriteAllText(Path.Combine(outDir, "settings.sample.json"), json);
+        });
+
+        Step("模拟输入文本规整", () =>
+        {
+            if (InputSimulator.Sanitize(null) != "") throw new Exception("null 规整异常");
+            if (InputSimulator.Sanitize("  ") != "") throw new Exception("空白规整异常");
+            if (InputSimulator.Sanitize(" hello\r\nworld ") != "hello world") throw new Exception("换行未转空格");
+            if (InputSimulator.Sanitize("a\tb") != "a b") throw new Exception("制表符未转空格");
+            if (InputSimulator.Sanitize("a\u0007b") != "ab") throw new Exception("控制字符未丢弃");
+            if (InputSimulator.Sanitize("收到，前往 B 点支援") != "收到，前往 B 点支援") throw new Exception("中文被改动");
+            if (Win32.SendUnicodeText("")) throw new Exception("空文本不应发送按键");
+            if (Win32.SendUnicodeText("\r\n")) throw new Exception("仅换行不应发送按键");
+            int expectedInputSize = IntPtr.Size == 8 ? 40 : 28;
+            if (System.Runtime.InteropServices.Marshal.SizeOf<Win32.INPUT>() != expectedInputSize)
+                throw new Exception($"INPUT 结构体大小异常: {System.Runtime.InteropServices.Marshal.SizeOf<Win32.INPUT>()} != {expectedInputSize}");
         });
 
         Step("界面语言与本地化", () =>

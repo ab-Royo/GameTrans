@@ -4,7 +4,7 @@
 
 [简体中文](README.md) | **English**
 
-A real-time chat translator for PC games. It captures a chosen screen region with a hotkey and sends it to the DeepSeek vision model for OCR and translation, then draws the result in place as a configurable overlay. A separate input-translation channel translates text you type and copies the result to the clipboard.
+A real-time chat translator for PC games. It captures a chosen screen region with a hotkey and sends it to the DeepSeek vision model for OCR and translation, then draws the result in place as a configurable overlay. A separate input-translation channel translates text you type and copies the result to the clipboard — or, optionally, types it straight into the game.
 
 - Standalone 64-bit process, single-file self-contained build, **no administrator rights required**
 - No dependency on the game client, account system or accelerator software
@@ -37,6 +37,7 @@ Current version: **1.3.0** · Project: [github.com/ab-Royo/GameTrans](https://gi
 | Region capture | Full-screen frozen screenshot with drag selection; multi-monitor and mixed-DPI aware |
 | Screen translation | Default `F8`: capture → vision model OCR + translation → overlay; press again to hide |
 | Input translation | Default `F9`: input box anchored to the capture region, translated in the configured direction and copied |
+| Simulated input | Optional setting: after the F9 translation, type the result straight into the game without using the clipboard |
 | UI language | One-click 简体中文 / English switch in Settings; every UI string updates immediately |
 | Translation direction | Source: auto / Chinese / English / Korean / Japanese; target: Chinese / English / Korean / Japanese (screen and F9 directions are independent) |
 | Target API | DeepSeek China / DeepSeek International, default follows the UI language, with links to the open platform, API docs and website |
@@ -93,7 +94,7 @@ Use **borderless windowed** or windowed mode for the game. Exclusive fullscreen 
 3. Click **Select region** on the startup page, drag over the in-game chat or subtitle area and press Enter.
 4. Back in game:
    - press `F8` to translate the current screen, press again to hide;
-   - press `F9`, type your text and press Enter — the translation is copied to the clipboard for pasting.
+   - press `F9`, type your text and press Enter — the translation is copied to the clipboard for pasting; with **Simulated input** enabled in Settings it is typed straight into the in-game chat box instead.
 
 After the first setup the app stays in the system tray. The tray menu can translate, re-select the capture region, open the glossary, open Settings or exit.
 
@@ -128,6 +129,15 @@ The direction comes from the **Input translation** source / target languages; de
 - `Esc` / `Enter` work anywhere in the window (even after clicking a button). The window is positioned in physical pixels, so per-monitor DPI no longer causes "visible but unclickable" offsets.
 - After a successful translation the box **always** auto-closes: 3 s when the copy succeeded, 5 s when the clipboard was busy (Enter retries the copy and closes immediately). Any key cancels the pending auto-close.
 - If the clipboard is temporarily occupied by another app, the status bar says "Clipboard busy; not copied" and Enter still closes the box immediately.
+
+### Simulated input (optional)
+
+Entry: Settings → **Translation** → **Simulated input: type the F9 result into the game (no clipboard)**, off by default.
+
+- When enabled, the F9 box shows the translation for a moment, then closes and types it into the current game window with `SendInput` (Unicode characters) instead of writing the clipboard — useful when the game cannot paste, or pasting triggers anti-cheat.
+- Open the in-game **chat input box first**; the app does not press Enter for you, it only types the text. Line breaks and tabs in the translation are turned into spaces to avoid accidentally sending the message.
+- The app first returns the foreground to the game and verifies the game window is focused again before typing. If it cannot switch back, or the game runs as administrator and blocks simulated input, it falls back to copying the translation to the clipboard and tells you.
+- Global hotkeys are suspended while typing, so characters in the translation cannot trigger a bound hotkey.
 
 ### UI language
 
@@ -211,7 +221,7 @@ Put a `portable.txt` next to the executable, or set the `GAMETRANS_DATA` environ
 | | `inputVk` / `inputMods` | Input translation hotkey, default `F9` (`0x78`), same key codes |
 | `region` | `left` / `top` / `right` / `bottom` | Capture region in virtual-desktop physical pixels |
 | `behavior` | `showStartupWindow` / `inputOpacity` | Startup page toggle, input box opacity |
-| | `showLatency` / `copyInputResult` | Latency display, auto-copy |
+| | `showLatency` / `copyInputResult` / `simulateInput` | Latency display, auto-copy, simulated input (type F9 result into the game, default `false`) |
 
 > When upgrading from 1.2.x or earlier, legacy language names (such as `中文（简体）`, `English`, `自动识别`) are normalized to language codes automatically; no manual edits needed.
 

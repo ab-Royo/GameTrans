@@ -244,6 +244,107 @@ internal static class Win32
     [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr GlobalLock(IntPtr hMem);
     [DllImport("kernel32.dll", SetLastError = true)] public static extern bool GlobalUnlock(IntPtr hMem);
 
+    // ---------- 模拟键入（SendInput / Unicode） ----------
+    // 结构体大小必须与系统 INPUT 完全一致（x64 = 40 字节），否则 SendInput 返回 0 且
+    // GetLastError() = ERROR_INVALID_PARAMETER。因此 union 里保留体积最大的 MOUSEINPUT。
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public INPUTUNION u;
+    }
+
+    public const uint INPUT_KEYBOARD = 1;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+    public const uint KEYEVENTF_UNICODE = 0x0004;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    /// <summary>
+    /// 以 Unicode 字符为单位注入文本（每个 UTF-16 单元一次 keydown + keyup）。
+    /// 不经过剪贴板；目标窗口需能接收字符消息（绝大多数游戏聊天框可以）。
+    /// </summary>
+    public static bool SendUnicodeText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+
+        var inputs = new List<INPUT>(text.Length * 2);
+        foreach (char ch in text)
+        {
+            if (ch is '\r' or '\n') continue; // 换行应在调用前规整为空格，避免误触聊天发送
+            inputs.Add(MakeUnicodeInput(ch, keyUp: false));
+            inputs.Add(MakeUnicodeInput(ch, keyUp: true));
+        }
+
+        if (inputs.Count == 0) return false;
+
+        var arr = inputs.ToArray();
+        uint sent = SendInput((uint)arr.Length, arr, Marshal.SizeOf<INPUT>());
+        if (sent != arr.Length)
+        {
+            Log.Warn($"模拟键入失败：SendInput 只发送了 {sent}/{arr.Length} 个事件 " +
+                     $"（Win32Error={Marshal.GetLastWin32Error()}），可能被以管理员权限运行的游戏窗口拦截");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static INPUT MakeUnicodeInput(char ch, bool keyUp) => new()
+    {
+        type = INPUT_KEYBOARD,
+        u = new INPUTUNION
+        {
+            ki = new KEYBDINPUT
+            {
+                wVk = 0,
+                wScan = ch,
+                dwFlags = KEYEVENTF_UNICODE | (keyUp ? KEYEVENTF_KEYUP : 0),
+                time = 0,
+                dwExtraInfo = IntPtr.Zero,
+            },
+        },
+    };
+
     // ---------- DPAPI（加密保存 API Key） ----------
     [StructLayout(LayoutKind.Sequential)]
     private struct DATA_BLOB

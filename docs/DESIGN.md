@@ -199,3 +199,21 @@ DeepSeek 官方对国内与海外账号使用同一个 API 端点 `https://api.d
 | 关闭按钮「点击区域与显示区域不一致」 | ① 状态文字与按钮同处一个 Grid 单元格且后添加，长文案字形会盖住按钮吞掉点击；② 窗口用 DIP 定位，混合 DPI 下与实际显示器缩放不一致，出现「看得到、点不到」 | 状态栏 `IsHitTestVisible=false` 且与按钮分列；窗口改用物理像素 `SetWindowPos` 定位/定尺寸，DPI 变化时重新摆放 |
 
 其余：关闭时把前台还给游戏（同样走 `ForceForeground`），避免用户关窗后还要手动点回游戏。
+
+## 14. 模拟输入（F9，1.4.0 新增）
+
+设置项 `behavior.simulateInput` 默认关闭。开启后 F9 流程由「复制到剪贴板」改为「模拟键入」：
+
+1. 翻译成功 → 输入框展示译文约 300 ms；
+2. `Close()` 触发 `Closing → RestoreForeground`，用 `ForceForeground` 把前台还给游戏；
+3. 轮询等待 `GetForegroundWindow()==游戏窗口`（最多 12 × 50 ms）——**确认目标窗口真的拿到焦点才开始键入**，
+   避免把译文打进随机窗口；
+4. 调用 `HotkeyManager.SuspendFor(len*20+500 ms)` 临时挂起热键（译文里的字符可能命中所绑定的热键）；
+5. `InputSimulator.SendText()` → `SendInput` + `KEYEVENTF_UNICODE`，逐 UTF-16 单元发送 keydown/keyup；
+6. 任一步失败（切不回游戏、目标窗口属于本程序、SendInput 被 UIPI 拦截）都退回复制到剪贴板并提示。
+
+文本规整（`InputSimulator.Sanitize`）：`\r` / `\n` / `\t` 折叠为单个空格，丢弃其余控制字符并 Trim；
+程序不自动按 Enter，避免误发聊天消息。
+
+互操作注意：`INPUT` 结构体在 x64 上必须是 40 字节，`INPUTUNION` 因此保留最大的 `MOUSEINPUT`
+（`KEYBDINPUT` 只有 24 字节，若只放它会触发 `ERROR_INVALID_PARAMETER`）。自检里有结构体尺寸断言。
