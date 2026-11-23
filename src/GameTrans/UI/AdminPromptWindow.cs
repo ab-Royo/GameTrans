@@ -89,4 +89,7 @@ public sealed class AdminPromptWindow : Window
         window.ShowDialog();
         return window._restart;
     }
+
+    /// <summary>离屏演示用：只创建窗口，不进入模态循环。</summary>
+    internal static AdminPromptWindow CreateForDemo() => new();
 }

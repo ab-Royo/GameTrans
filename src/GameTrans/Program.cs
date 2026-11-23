@@ -40,6 +40,9 @@ public static class Program
         if (args.Any(a => a.Equals("--demo-startup", StringComparison.OrdinalIgnoreCase)))
             return DemoWindow(args, "startup");
 
+        if (args.Any(a => a.Equals("--demo-admin-prompt", StringComparison.OrdinalIgnoreCase)))
+            return DemoAdminPrompt(args);
+
         if (args.Any(a => a.Equals("--demo-glossary", StringComparison.OrdinalIgnoreCase)))
             return DemoWindow(args, "glossary");
 
@@ -380,6 +383,54 @@ public static class Program
 
         return app.Run();
     }
+    /// <summary>调试：打开模拟输入管理员提示框，0.8 秒后离屏渲染成 PNG。</summary>
+    private static int DemoAdminPrompt(string[] args)
+    {
+        var outPath = args.Length > 1 && !args[1].StartsWith("--")
+            ? args[1]
+            : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "gametrans-admin-prompt.png");
+
+        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        app.Startup += (_, _) =>
+        {
+            var w = UI.AdminPromptWindow.CreateForDemo();
+            w.Show();
+
+            var timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(800),
+            };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                try
+                {
+                    var root = (System.Windows.FrameworkElement)w.Content;
+                    root.UpdateLayout();
+                    int cw = (int)Math.Ceiling(root.ActualWidth);
+                    int ch = (int)Math.Ceiling(root.ActualHeight);
+                    var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(Math.Max(1, cw),
+                        Math.Max(1, ch), 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+                    rtb.Render(root);
+                    var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                    enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+                    using (var fs = System.IO.File.Create(outPath)) enc.Save(fs);
+                    Core.Log.Info($"demo admin prompt content {cw}x{ch} -> {outPath}");
+                }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("demo admin prompt 截图失败: " + ex);
+                }
+
+                w.Close();
+                app.Shutdown();
+            };
+            timer.Start();
+        };
+
+        return app.Run();
+    }
+
     /// <summary>调试：打开启动页 / 黑话表，0.9 秒后离屏渲染成 PNG。</summary>
     private static int DemoWindow(string[] args, string kind)
     {
