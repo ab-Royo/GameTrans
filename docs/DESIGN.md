@@ -19,6 +19,8 @@ src/GameTrans
 │  ├─ SettingsStore.cs   配置读写、密钥加解密、日志
 │  ├─ ClipboardService.cs 剪贴板写入（带时间预算的 Win32 实现）
 │  ├─ HotkeyManager.cs   RegisterHotKey（键盘）+ GetAsyncKeyState 轮询（鼠标键）
+│  ├─ AdminHelper.cs     管理员权限检测、UIPI 说明与提权重启
+│  ├─ NetworkDiagnostics.cs  DNS / TCP 探测与网络错误分类
 │  ├─ DeepSeekClient.cs  chat/completions 调用与错误映射
 │  └─ Prompts.cs         提示词模板（画面翻译 / 输入翻译 / 术语表注入）
 └─ UI
@@ -30,11 +32,12 @@ src/GameTrans
    ├─ InputWindow.cs     F9 输入翻译
    ├─ SettingsWindow.cs  设置页
    ├─ StartupWindow.cs   启动页
+   ├─ AdminPromptWindow.cs 模拟输入管理员权限提示 / 提权重启
    ├─ GlossaryWindow.cs  术语 / 黑话对照表
    └─ ToastWindow.cs     轻提示
 ```
 
-技术栈：.NET 9 + WPF（`net9.0-windows`），`win-x64`，自包含单文件，`asInvoker` 与 PerMonitorV2 清单。
+技术栈：.NET 9 + WPF（`net9.0-windows`），`win-x64`，自包含单文件，`asInvoker` 与 PerMonitorV2 清单（模拟输入可按需提权重启，见第 16 节）。
 
 ## 2. 坐标与 DPI
 
@@ -103,6 +106,8 @@ src/GameTrans
 
 本机实测（Ryzen 9 8945HX，32 逻辑核）：原 `DispatcherTimer` 方案空闲占用约 11 ms/s CPU 时间，专用线程方案约 3 ms/s，热键触发行为不变。
 
+**重新选区热键（1.5.0 起）**：`hotkeys.regionVk = 0` 表示不绑定，这是默认值。`HotkeyManager` 把第三个绑定作为可选绑定处理：未绑定时不产生错误、不参与 `AllNativeRegistered` 判定；绑定后与翻译 / 输入热键共用同一套原生注册、轮询兜底、两通道去重和重复绑定检测。触发的回调只打开 `RegionSelectorWindow`，不要求 API Key，选完立即写配置并刷新启动页。
+
 ### 鼠标键（中键 / 侧键1 / 侧键2）
 
 `RegisterHotKey` 只支持键盘虚拟键：对鼠标键（`VK_MBUTTON`=0x04、`VK_XBUTTON1`=0x05、`VK_XBUTTON2`=0x06）调用它会**返回成功但永远不会收到 `WM_HOTKEY`**（本机实测验证）。因此鼠标键改用轮询：
@@ -132,8 +137,10 @@ src/GameTrans
 ```
 
 - 图像仅出现在 user 消息；编码为 data URL，全程内存操作。
-- `429` 与 `5xx` 自动重试一次（指数退避）。
+- 429 与 5xx 自动重试一次（指数退避）。
 - 错误按 `status + 服务端 message` 透出，便于定位 Key、余额、限流与内容问题。
+- `SocketsHttpHandler.ConnectTimeout = 8s`：网络被加速器 / 代理接管时 TCP 连接可能长时间无响应，8 秒内连不上就直接按网络错误返回；HTTP 整体超时仍由 `api.timeoutSeconds` 控制。
+- 网络异常（`HttpRequestException`）交给 `NetworkDiagnostics.ExplainRequestFailure` 分类为 DNS 失败 / 不可达 / 拒绝 / 超时 / TLS 失败，并附带排查建议（见第 15 节）；DNS 失败不再做 700 ms 重试。
 
 ## 7. 提示词设计
 
@@ -153,7 +160,7 @@ src/GameTrans
 
 - 目录：`%APPDATA%\GameTrans`；`portable.txt` 或环境变量 `GAMETRANS_DATA` 可覆盖。
 - API Key 通过 `CryptProtectData` 加密后写入 `settings.json`，读取时解密；失败则视为未配置。
-- 所有数值在 `Normalize()` 中夹紧，避免手工编辑配置文件导致越界。
+- 所有数值在 `Normalize()` 中夹紧，避免手工编辑配置文件导致越界；`hotkeys.regionVk = 0` 表示「重新选区」热键未绑定，属于合法默认值，不会被 `Normalize()` 强制赋值。
 - 日志单文件轮转（2 MB）。
 
 ## 9. 剪贴板写入
@@ -225,3 +232,47 @@ DeepSeek 官方对国内与海外账号使用同一个 API 端点 `https://api.d
 
 互操作注意：`INPUT` 结构体在 x64 上必须是 40 字节，`INPUTUNION` 因此保留最大的 `MOUSEINPUT`
 （`KEYBDINPUT` 只有 24 字节，若只放它会触发 `ERROR_INVALID_PARAMETER`）。自检里有结构体尺寸断言。
+
+## 15. 网络诊断（1.5.0）
+
+背景：用户开着雷神加速器的「模式二」时，游戏流量被接管，但系统 DNS 被改写 / 失效，浏览器、`ping`
+与 API 请求全部找不到主机。.NET 对此只抛 `HttpRequestException("不知道这样的主机 (api.deepseek.com:443)")`，
+用户无法判断是程序、Key 还是网络问题。
+
+`NetworkDiagnostics` 提供两层能力：
+
+1. **主动探测** `ProbeAsync(baseUrl)`：先 `Dns.GetHostAddressesAsync`，再对解析出的地址逐个
+   `TcpClient.ConnectAsync(host, port)`（默认 5 秒超时），不发送任何 HTTP 数据。结果分类为
+   `Ok / DnsFailed / Unreachable / Timeout / Unknown`，附带面向用户的摘要与建议。托盘菜单
+   「网络诊断…」与启动页「网络」行都走这条路径；启动页在每次打开与程序启动后自动探测一次。
+2. **请求异常映射** `ExplainRequestFailure(ex, baseUrl)`：递归展开 `HttpRequestException` /
+   `SocketException` / `AuthenticationException`，把 `HostNotFound` / `NoData` / `TryAgain` /
+   `NoRecovery`、`NetworkUnreachable`、`ConnectionRefused`、`TimedOut`、TLS 失败分别映射成中文 /
+   英文提示。DNS 失败会明确建议「关闭或切换加速器模式、把系统 DNS 改为 223.5.5.5 / 1.1.1.1、
+   确认浏览器能打开 https://api.deepseek.com」。
+
+配套调整：
+
+- `DeepSeekClient` 的 `SocketsHttpHandler.ConnectTimeout = 8s`，网络黑洞时不会等到
+  `timeoutSeconds` 才失败；DNS 失败不再做 700 ms 重试（确定性错误，重试无意义）。
+- TrayApp 缓存最近一次探测结果；翻译失败且 `StatusCode == 0` 时后台刷新，启动页与日志同步更新。
+- 网络探测结果不落盘，不引入任何遥测。
+
+## 16. 管理员权限与提权重启（1.5.0）
+
+程序清单仍是 `asInvoker`（截图、热键、剪贴板都不需要管理员权限），只有「模拟输入」在
+目标游戏 / 加速器以管理员运行时会被 UIPI 拦截，因此按需提权：
+
+- `AdminHelper.IsElevated` 通过 `WindowsIdentity.GetCurrent()` + `WindowsPrincipal.IsInRole(Administrator)`
+  检测（`Lazy` 缓存一次）；非管理员时，设置页勾选模拟输入立即显示红色警示条。
+- 保存设置时若 `behavior.simulateInput == true` 且未提权，弹出 `AdminPromptWindow`：说明 UIPI
+  拦截原因，提供「以管理员身份重启」与「暂不重启」。取消时设置已保存，不影响继续使用。
+- 提权重启用 `ProcessStartInfo { UseShellExecute = true, Verb = "runas" }` 拉起同一 exe；
+  用户取消 UAC（Win32 1223）时返回错误提示并继续当前实例。
+- 单实例互斥体 `Global\GameTrans.SingleInstance.v1` 改为由 `Program` 静态持有，可在拉起新进程前
+  调用 `ReleaseSingleInstanceMutex()` 释放；若 `Process.Start` 失败则调用
+  `TryReacquireSingleInstanceMutex()` 拿回，避免旧实例失去单实例保护。成功拉起后由 TrayApp
+  正常 `Shutdown()`，清理托盘与热键。
+- 启动页、未显示启动页时的启动气泡、F9 输入窗初始状态与模拟输入失败兜底都会提示「以管理员身份
+  重启」；提权与否不影响普通翻译流程。
+

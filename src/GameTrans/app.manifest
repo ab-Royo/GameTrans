@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
-  <assemblyIdentity version="1.0.0.0" name="GameTrans.app" />
+  <assemblyIdentity version="1.5.0.0" name="GameTrans.app" />
 
-  <!-- 免管理员：与原版 requireAdministrator 明确相反 -->
+  <!-- 默认免管理员；模拟输入在游戏以管理员运行时可由设置页提示提权重启 -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

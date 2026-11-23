@@ -6,12 +6,12 @@
 
 A real-time chat translator for PC games. It captures a chosen screen region with a hotkey and sends it to the DeepSeek vision model for OCR and translation, then draws the result in place as a configurable overlay. A separate input-translation channel translates text you type and copies the result to the clipboard — or, optionally, types it straight into the game.
 
-- Standalone 64-bit process, single-file self-contained build, **no administrator rights required**
+- Standalone 64-bit process, single-file self-contained build, **no administrator rights required by default** (simulated input may need an elevated restart when the game / accelerator runs elevated)
 - No dependency on the game client, account system or accelerator software
 - Click-through overlay that never steals focus and is excluded from screen capture (so it never translates itself)
 - UI switchable between **简体中文 / English**; translation direction and target API are dropdowns
 
-Current version: **1.4.1** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
+Current version: **1.5.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
 
 ## Contents
 
@@ -37,7 +37,9 @@ Current version: **1.4.1** · Project: [github.com/ab-Royo/GameTrans](https://gi
 | Region capture | Full-screen frozen screenshot with drag selection; multi-monitor and mixed-DPI aware |
 | Screen translation | Default `F8`: capture → vision model OCR + translation → overlay; press again to hide |
 | Input translation | Default `F9`: input box anchored to the capture region, translated in the configured direction and copied |
-| Simulated input | Optional setting: after the F9 translation, type the result straight into the game without using the clipboard |
+| Simulated input | Optional setting: after the F9 translation, type the result straight into the game without using the clipboard; blocked when the game / accelerator runs elevated, in which case the app offers an elevated restart |
+| Select-region hotkey | Optional global hotkey to re-select the capture region in-game; unbound by default |
+| Network diagnostics | Distinguishes DNS failure, unreachable endpoint, connect timeout and TLS failure, with accelerator / VPN / proxy / DNS suggestions; the startup page shows live network status |
 | UI language | One-click 简体中文 / English switch in Settings; every UI string updates immediately |
 | Translation direction | Source: auto / Chinese / English / Korean / Japanese; target: Chinese / English / Korean / Japanese (screen and F9 directions are independent) |
 | Target API | DeepSeek China / DeepSeek International, default follows the UI language, with links to the open platform, API docs and website |
@@ -45,8 +47,8 @@ Current version: **1.4.1** · Project: [github.com/ab-Royo/GameTrans](https://gi
 | Overlay style | Background color/opacity, text color, font family/size, padding, corner radius, border and alignment are configurable |
 | Overflow strategy | Extend downward by default (same font size), or shrink to fit the region |
 | Glossary | Hand-maintained term → meaning table injected into the prompt to constrain game-specific wording |
-| Startup page | Summarizes model API, capture region, hotkeys and glossary, with shortcuts to each setting |
-| Headless self-test | `--selftest` verifies config, capture, off-screen rendering, request body, prompts and language/site normalization |
+| Startup page | Summarizes model API, network, capture region, hotkeys, glossary and permission warnings, with shortcuts to each setting; opens on tray double-click |
+| Headless self-test | `--selftest` verifies config, capture, off-screen rendering, request body, prompts, language/site normalization, network error classification and the region-hotkey default |
 
 ## Screenshots
 
@@ -91,12 +93,12 @@ Use **borderless windowed** or windowed mode for the game. Exclusive fullscreen 
    - pick the UI language (简体中文 / English) in the **Interface** card;
    - check the **Target API** in the **Model API** card (default follows the UI language), paste your DeepSeek API key and click **Test connection**;
    - adjust the source / target languages as needed (dropdowns; the source language can be **Auto**).
-3. Click **Select region** on the startup page, drag over the in-game chat or subtitle area and press Enter.
+3. Click **Select region** on the startup page, drag over the in-game chat or subtitle area and press Enter. To re-select in-game later, bind the optional **Select-region hotkey** in Settings → **Hotkeys & capture region** (unbound by default).
 4. Back in game:
    - press `F8` to translate the current screen, press again to hide;
-   - press `F9`, type your text and press Enter — the translation is copied to the clipboard for pasting; with **Simulated input** enabled in Settings it is typed straight into the in-game chat box instead.
+   - press `F9`, type your text and press Enter — the translation is copied to the clipboard for pasting; with **Simulated input** enabled in Settings it is typed straight into the in-game chat box instead (restart GameTrans as administrator when the game itself runs elevated).
 
-After the first setup the app stays in the system tray. The tray menu can translate, re-select the capture region, open the glossary, open Settings or exit.
+After the first setup the app stays in the system tray. **Double-click the tray icon to open the startup page.** The tray menu can translate, re-select the capture region, open the glossary, run network diagnostics, open Settings or exit.
 
 ## Usage
 
@@ -138,6 +140,7 @@ Entry: Settings → **Translation** → **Simulated input: type the F9 result in
 - Open the in-game **chat input box first**; the app does not press Enter for you, it only types the text. Line breaks and tabs in the translation are turned into spaces to avoid accidentally sending the message.
 - The app first returns the foreground to the game and verifies the game window is focused again before typing. If it cannot switch back, or the game runs as administrator and blocks simulated input, it falls back to copying the translation to the clipboard and tells you.
 - Global hotkeys are suspended while typing, so characters in the translation cannot trigger a bound hotkey.
+- **When administrator rights are needed**: if the game or accelerator runs elevated, Windows (UIPI) blocks `SendInput` from a non-elevated process. Ticking simulated input shows a red warning right away; on save, a dialog explains the issue and offers **Restart as administrator** (or "Not now"). The app still starts unelevated by default — elevation is opt-in. Cancelling the restart keeps the setting saved and the clipboard flow working.
 
 ### UI language
 
@@ -161,11 +164,21 @@ Entry: Settings → **Model API** → **Target API**.
 - Switching the option resets the base URL to that preset; a custom gateway can still be entered manually in Base URL and is not overwritten.
 - Chinese UI defaults to China; other languages default to International. If you change the target API manually, switching the UI language will not override your choice.
 
+### Network issues and diagnostics
+
+With some accelerator modes (for example Thunder's "Mode 2"), VPNs or system proxies, DNS may be hijacked or stop working entirely: the game works, but browsers, `ping` and API requests all fail to resolve hosts. GameTrans translates those system errors into actionable messages:
+
+- On startup it probes the network once (DNS + TCP, no HTTP data) and shows **Network** status on the startup page: OK / DNS lookup failed / unreachable / timed out, with advice when it fails.
+- Tray menu → **Network diagnostics…** re-runs the probe on demand and shows the full result (endpoint, latency, cause and suggestions).
+- When F8 hits a network error, the overlay no longer just says "No such host is known"; it states that DNS resolution failed and suggests: disable or switch the accelerator mode and retry, set the system DNS to `223.5.5.5` / `1.1.1.1`, and verify a browser can open `https://api.deepseek.com`.
+- DNS failures are deterministic, so the client no longer retries them after 700 ms; the TCP connect timeout is capped at 8 seconds so pressing F8 does not leave the UI hanging.
+
 ### Hotkey binding
 
 Entry: Settings → **Hotkeys & capture region**.
 
 - Click **Translate hotkey** or **Input hotkey**, then press the desired combination; press `Esc` to cancel recording.
+- **Select-region hotkey** is unbound by default: click it and press a combination; in game it opens the full-screen region picker directly. The adjacent **Clear** button unbinds it. No API key is required for this action.
 - Keyboard keys (letters, digits, F-keys, arrows, `Home` / `End`, etc.) and three mouse buttons are supported: **middle button**, **side button 1** and **side button 2**.
 - `Ctrl` / `Alt` / `Shift` / `Win` modifiers can be combined, e.g. `Ctrl+Mouse Side 1`.
 - Keyboard hotkeys are registered with `RegisterHotKey` first, with a `GetAsyncKeyState` poll every 15 ms on a dedicated background thread as a fallback: some games (DirectInput / exclusive fullscreen) keep keys away from the message pump, so registration may succeed while `WM_HOTKEY` never arrives — or the hotkey is already owned by another program. The two channels de-duplicate the same physical press, so nothing fires twice; no global keyboard hook is installed.
@@ -219,9 +232,10 @@ Put a `portable.txt` next to the executable, or set the `GAMETRANS_DATA` environ
 | | `clickThrough` | Click-through |
 | `hotkeys` | `translateVk` / `translateMods` | Screen translation hotkey, default `F8` (`0x77`); mouse middle / side1 / side2 are `0x04` / `0x05` / `0x06` |
 | | `inputVk` / `inputMods` | Input translation hotkey, default `F9` (`0x78`), same key codes |
+| | `regionVk` / `regionMods` | Select-region hotkey, default `0` = unbound; same key codes |
 | `region` | `left` / `top` / `right` / `bottom` | Capture region in virtual-desktop physical pixels |
 | `behavior` | `showStartupWindow` / `inputOpacity` | Startup page toggle, input box opacity |
-| | `showLatency` / `copyInputResult` / `simulateInput` | Latency display, auto-copy, simulated input (type F9 result into the game, default `false`) |
+| | `showLatency` / `copyInputResult` / `simulateInput` | Latency display, auto-copy, simulated input (type F9 result into the game, default `false`; requires an elevated restart when the game / accelerator runs as administrator) |
 
 > When upgrading from 1.2.x or earlier, legacy language names (such as `中文（简体）`, `English`, `自动识别`) are normalized to language codes automatically; no manual edits needed.
 
@@ -273,6 +287,7 @@ dist\GameTrans.exe --selftest .\out
 | `--api-vision <API_KEY> <image>` | Run vision translation on an image |
 | `--lang <zh\|en>` | UI language for off-screen demos/self-test (used to generate bilingual screenshots) |
 | `--demo-startup <png>` | Off-screen render of the startup page |
+| `--demo-admin-prompt <png>` | Off-screen render of the simulated-input elevation prompt |
 | `--demo-glossary <png>` | Off-screen render of the glossary |
 | `--demo-settings <png>` | Off-screen render of the full settings page |
 | `--demo-overlay <x> <y> <w> <h>` | Show the overlay at the given position |
@@ -281,6 +296,12 @@ dist\GameTrans.exe --selftest .\out
 | `--demo-selector` | Briefly open the region selector for verification |
 
 ## FAQ
+
+**After enabling an accelerator / VPN / proxy, browsers, `ping` and GameTrans all fail to resolve hosts (DNS failure)**
+This is common when an accelerator rewrites system DNS but only proxies game traffic (Thunder "Mode 2", for example). GameTrans does not change your network settings, but it does: (1) show **DNS lookup failed** on the startup page and in tray → **Network diagnostics…**; (2) put actionable suggestions in the F8 overlay. Try disabling the accelerator or switching its mode and retrying; set the system DNS to `223.5.5.5` / `1.1.1.1`; verify a browser can open `https://api.deepseek.com` before pressing `F8`. If you must keep the accelerator mode, add the DeepSeek API domain to its direct / bypass list.
+
+**Simulated input does not type into the game / saving Settings says administrator rights are required**
+Simulated input uses `SendInput`; when the game or accelerator runs elevated, Windows (UIPI) blocks typing from a non-elevated process. Ticking simulated input shows a red warning, and saving offers **Restart as administrator**. You can also exit and right-click `GameTrans.exe` → **Run as administrator**. To stay unelevated, turn simulated input off and keep using clipboard + manual paste.
 
 **Hotkeys do nothing (single-key F8 / F9 ignored by some games)**
 Usually another program owns the hotkey (the game itself, recording/overlay tools, mouse drivers). Since 1.4.0 the app switches to a polling fallback automatically when `RegisterHotKey` fails or its callback never arrives, and says so in a toast; single keys generally keep working. If the game also binds the same key and both react, use a combination with modifiers (e.g. `Ctrl+F8`, `Alt+F9`). Mouse middle / side buttons cannot be registered with `RegisterHotKey` and are always polled.
