@@ -236,6 +236,14 @@ public sealed class InputWindow : Window
 
     private void SetHintStatus()
     {
+        if (_settings.Behavior.SimulateInput && !AdminHelper.IsElevated)
+        {
+            _status.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x66));
+            _status.Text = Loc.T("模拟输入需管理员权限，可能被游戏拦截　·　Enter 翻译　·　Esc 关闭",
+                "Simulated input needs admin rights and may be blocked  ·  Enter to translate  ·  Esc to close");
+            return;
+        }
+
         _status.Foreground = Theme.Sub;
         _status.Text = Loc.F("Enter 翻译　·　Esc 关闭　·　{0}",
             "Enter to translate  ·  Esc to close  ·  {0}", _settings.Api.Model);
@@ -503,12 +511,18 @@ public sealed class InputWindow : Window
     private static void FallbackToClipboard(string text)
     {
         bool copied = ClipboardService.TrySetText(text);
-        ToastWindow.ShowToast(copied
-                ? Loc.T("模拟输入未执行，译文已复制到剪贴板",
-                    "Simulated input was not performed; the translation was copied to the clipboard")
-                : Loc.T("模拟输入未执行，剪贴板也被占用，请手动复制译文",
-                    "Simulated input was not performed and the clipboard is busy; copy the translation manually"),
-            true);
+        var message = copied
+            ? Loc.T("模拟输入未执行，译文已复制到剪贴板",
+                "Simulated input was not performed; the translation was copied to the clipboard")
+            : Loc.T("模拟输入未执行，剪贴板也被占用，请手动复制译文",
+                "Simulated input was not performed and the clipboard is busy; copy the translation manually");
+
+        // 普通权限下最常见的拦截原因是目标游戏 / 加速器以管理员运行（UIPI），提示提权方向。
+        if (!AdminHelper.IsElevated)
+            message += Loc.T("；游戏可能以管理员运行，可尝试以管理员身份重启 GameTrans",
+                "; the game may run elevated — try restarting GameTrans as administrator");
+
+        ToastWindow.ShowToast(message, true);
     }
 
     private static bool IsOwnProcessWindow(IntPtr hwnd)

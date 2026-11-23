@@ -22,6 +22,7 @@ public sealed class StartupWindow : Window
     private readonly TextBlock _hotkeyValue;
     private readonly TextBlock _glossaryValue;
     private readonly CheckBox _showOnStartup;
+    private readonly Border _adminWarning;
     private NetworkProbe? _network;
 
     public StartupWindow(AppSettings s,
@@ -54,6 +55,19 @@ public sealed class StartupWindow : Window
         _regionValue = Theme.L("", 13, Theme.Text, true);
         _hotkeyValue = Theme.L("", 13, Theme.Text);
         _glossaryValue = Theme.L("", 13, Theme.Text, true);
+
+        _adminWarning = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(34, 0xFF, 0x6B, 0x6B)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 12),
+            Visibility = Visibility.Collapsed,
+            Child = Theme.L("⚠ " + AdminHelper.SimulateInputShortWarning, 12.5,
+                new SolidColorBrush(Color.FromRgb(0xFF, 0xB4, 0xB4)), true),
+        };
 
         var header = new Grid { Height = 64 };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -140,6 +154,7 @@ public sealed class StartupWindow : Window
         footer.Children.Add(tip);
 
         var body = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 0, 0, 0) };
+        body.Children.Add(_adminWarning);
         body.Children.Add(statusCard);
         body.Children.Add(new Border { Height = 12 });
         body.Children.Add(steps);
@@ -256,6 +271,9 @@ public sealed class StartupWindow : Window
             ? Loc.T("未配置（可在「术语表」中添加）", "Not configured (add entries in Glossary)")
             : Loc.F("{0} 条", "{0} entries", n);
 
+        _adminWarning.Visibility = s.Behavior.SimulateInput && !AdminHelper.IsElevated
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         UpdateNetworkText();
     }
 

@@ -97,6 +97,10 @@ public sealed class TrayApp : IDisposable
         // 启动后在后台做一次网络探测：启动页显示状态；未显示启动页时，网络异常才弹出提示。
         // 用加速器 / 代理后 DNS 可能整体失效，提前发现比等用户按 F8 才报错更友好。
         _ = RefreshNetworkAsync(notify: !startupShown);
+
+        // 已开启模拟输入但当前不是管理员：启动页会显示醒目警示；没开启动页时用气泡提醒一次。
+        if (!startupShown && _settings.Behavior.SimulateInput && !AdminHelper.IsElevated)
+            Toast(AdminHelper.SimulateInputShortWarning, true);
     }
 
     private ContextMenuStrip BuildMenu()
@@ -520,7 +524,7 @@ public sealed class TrayApp : IDisposable
                 RebuildTray();
                 _startup?.Refresh(_settings);
             }
-        });
+        }, RestartAsAdmin);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
@@ -544,6 +548,19 @@ public sealed class TrayApp : IDisposable
         if (_tray == null) return;
         _tray.Text = Loc.T("GameTrans 游戏聊天翻译", "GameTrans Game Chat Translator");
         _tray.ContextMenuStrip = BuildMenu();
+    }
+
+    /// <summary>设置页请求以管理员身份重启：成功拉起新进程后退出当前实例。</summary>
+    private void RestartAsAdmin()
+    {
+        var error = AdminHelper.RestartElevated();
+        if (error != null)
+        {
+            Toast(error, true);
+            return;
+        }
+
+        Shutdown();
     }
 
     public void Shutdown()

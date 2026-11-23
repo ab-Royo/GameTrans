@@ -8,6 +8,9 @@ public static class Program
 {
     private const string MutexName = "Global\\GameTrans.SingleInstance.v1";
 
+    /// <summary>单实例互斥体；以管理员身份重启时需要先释放，否则新进程会被旧进程挡住。</summary>
+    private static Mutex? _singleInstanceMutex;
+
     [STAThread]
     public static int Main(string[] args)
     {
@@ -49,9 +52,11 @@ public static class Program
         if (args.Any(a => a.Equals("--demo-compose", StringComparison.OrdinalIgnoreCase)))
             return DemoCompose(args);
 
-        using var mutex = new Mutex(true, MutexName, out bool createdNew);
+        _singleInstanceMutex = new Mutex(true, MutexName, out bool createdNew);
         if (!createdNew)
         {
+            _singleInstanceMutex.Dispose();
+            _singleInstanceMutex = null;
             // 已有实例：提示后退出（不弹窗打扰）
             UI.ToastWindow.ShowToast(Core.Loc.T("GameTrans 已在运行，请查看系统托盘", "GameTrans is already running; check the system tray"));
             Thread.Sleep(1200);
@@ -88,7 +93,85 @@ public static class Program
             }
         };
 
-        return app.Run();
+        try
+        {
+            return app.Run();
+        }
+        finally
+        {
+            ReleaseSingleInstanceMutex();
+        }
+    }
+
+    /// <summary>
+    /// 释放单实例互斥体（以管理员身份重启前调用）。正常退出时由 <see cref="Main"/> 的 finally 兜底，
+    /// 重复调用安全。
+    /// </summary>
+    internal static void ReleaseSingleInstanceMutex()
+    {
+        var mutex = Interlocked.Exchange(ref _singleInstanceMutex, null);
+        if (mutex == null) return;
+        try
+        {
+            mutex.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
+            // 当前线程不持有互斥体（例如重启已经释放过）时忽略
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("释放单实例互斥体失败: " + ex.Message);
+        }
+        finally
+        {
+            try
+            {
+                mutex.Dispose();
+            }
+            catch
+            {
+                // 忽略
+            }
+        }
+    }
+
+    /// <summary>提权重启被取消时，尝试重新拿回单实例保护；失败也不影响当前进程继续运行。</summary>
+    internal static bool TryReacquireSingleInstanceMutex()
+    {
+        if (Interlocked.CompareExchange(ref _singleInstanceMutex, null, null) != null) return true;
+        try
+        {
+            var mutex = new Mutex(true, MutexName, out bool createdNew);
+            if (!createdNew)
+            {
+                mutex.Dispose();
+                return false;
+            }
+
+            var previous = Interlocked.CompareExchange(ref _singleInstanceMutex, mutex, null);
+            if (previous != null)
+            {
+                // 别的路径已经拿回来了
+                try
+                {
+                    mutex.ReleaseMutex();
+                }
+                catch
+                {
+                    // 忽略
+                }
+
+                mutex.Dispose();
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("重新获取单实例互斥体失败: " + ex.Message);
+            return false;
+        }
     }
 
     /// <summary>解析 --lang zh|en（供离屏截图与自检按指定语言渲染），缺省保持当前语言。</summary>
@@ -313,9 +396,26 @@ public static class Program
                 : new UI.GlossaryWindow(s.Prompt.Glossary);
             w.Show();
 
+            // 截图里把「网络」状态也带上：真实应用会在启动后自动探测，这里同样跑一次。
+            if (kind == "startup" && w is UI.StartupWindow startupWindow)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var probe = await Core.NetworkDiagnostics.ProbeAsync(s.Api.BaseUrl);
+                        _ = w.Dispatcher.BeginInvoke(new Action(() => startupWindow.SetNetwork(probe)));
+                    }
+                    catch (Exception ex)
+                    {
+                        Core.Log.Warn("demo startup 网络探测失败: " + ex.Message);
+                    }
+                });
+            }
+
             var timer = new System.Windows.Threading.DispatcherTimer
             {
-                Interval = TimeSpan.FromMilliseconds(900),
+                Interval = TimeSpan.FromMilliseconds(kind == "startup" ? 1600 : 900),
             };
             timer.Tick += (_, _) =>
             {

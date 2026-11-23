@@ -13,6 +13,7 @@ public sealed class SettingsWindow : Window
 {
     private readonly AppSettings _s;
     private readonly Action<AppSettings> _onSave;
+    private readonly Action? _onRestartElevated;
     private readonly DeepSeekClient _client = new();
 
     // 所有可复用状态都由 BuildBody 重建，切换界面语言时整页重建，避免控件被重复挂载。
@@ -27,6 +28,7 @@ public sealed class SettingsWindow : Window
     private ScrollViewer? _scroll;
     private TextBox? _baseUrlBox;
     private StackPanel? _siteLinks;
+    private Border? _simulateWarning;
 
     private bool _siteTouched;
     private bool _saved;
@@ -37,10 +39,11 @@ public sealed class SettingsWindow : Window
     /// <summary>英文标签更长，标签列适当加宽。</summary>
     private static double LabelW => Loc.IsEnglish ? 122 : 88;
 
-    public SettingsWindow(AppSettings current, Action<AppSettings> onSave)
+    public SettingsWindow(AppSettings current, Action<AppSettings> onSave, Action? onRestartElevated = null)
     {
         _s = Clone(current);
         _onSave = onSave;
+        _onRestartElevated = onRestartElevated;
         _languageAtOpen = _s.Ui.Language;
         _keyPassword = SettingsStore.ReadApiKey(_s);
         // 已经手工偏离过默认站的配置视为「用户明确选择」，切换界面语言时不再自动跟随
@@ -389,11 +392,16 @@ public sealed class SettingsWindow : Window
         var simulate = Theme.Chk(
             Loc.T("模拟输入：F9 译文直接键入游戏（不写剪贴板）",
                 "Simulated input: type the F9 result into the game (no clipboard)"),
-            _s.Behavior.SimulateInput, v => _s.Behavior.SimulateInput = v);
+            _s.Behavior.SimulateInput, v =>
+            {
+                _s.Behavior.SimulateInput = v;
+                UpdateSimulateWarning();
+            });
         var simulateHint = Theme.L(Loc.T(
             "开启后，F9 翻译完成会把译文自动模拟键入当前游戏窗口；请先在游戏里打开聊天输入框，程序不会自动按 Enter 发送。默认关闭，使用「复制到剪贴板 + 手动粘贴」。",
             "When enabled, the F9 translation is typed into the current game window by simulated keystrokes; open the in-game chat box first — the app does not press Enter for you. Off by default (clipboard + manual paste)."),
             12, Theme.Sub);
+        var simulateWarning = BuildSimulateWarning();
 
         return Theme.Card(Loc.T("翻译行为", "Translation"),
             Theme.Field(Loc.T("目标游戏", "Target game"), gameBox, LabelW),
@@ -408,6 +416,7 @@ public sealed class SettingsWindow : Window
                 Theme.L(Loc.T("F9：输入源语言 → 目标语言", "F9: source → target"), 12, Theme.Sub)), LabelW),
             simulate,
             simulateHint,
+            simulateWarning,
             new Border { Height = 8 },
             Theme.Field(Loc.T("输出模式", "Output mode"), mode, LabelW),
             modeHint,
@@ -421,6 +430,41 @@ public sealed class SettingsWindow : Window
 
     private static string GlossaryButtonText(int count) =>
         Loc.F("编辑术语 / 黑话对照表（{0} 项）", "Edit glossary ({0} entries)", count);
+
+    /// <summary>「模拟输入 + 非管理员」时的醒目警示条：勾选后立即出现，不必等保存。</summary>
+    private Border BuildSimulateWarning()
+    {
+        var warn = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(34, 0xFF, 0x6B, 0x6B)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 6, 0, 6),
+            Visibility = Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = "⚠ " + AdminHelper.SimulateInputShortWarning,
+                FontFamily = Theme.Font,
+                FontSize = 12.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xB4, 0xB4)),
+                TextWrapping = TextWrapping.Wrap,
+            },
+        };
+        _simulateWarning = warn;
+        UpdateSimulateWarning();
+        return warn;
+    }
+
+    private void UpdateSimulateWarning()
+    {
+        if (_simulateWarning == null) return;
+        _simulateWarning.Visibility = _s.Behavior.SimulateInput && !AdminHelper.IsElevated
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
 
     /// <summary>语言下拉框：显示名随界面语言变化，存储为语言代码。</summary>
     private DropDown LanguageDrop(string currentCode, bool allowAuto, Action<string> onChange, double width)
@@ -873,8 +917,8 @@ public sealed class SettingsWindow : Window
         };
 
         return Theme.Card(Loc.T("关于", "About"),
-            Theme.L(Loc.F("GameTrans {0} · 独立 64 位进程 · 无需管理员权限 · 仅调用 DeepSeek API",
-                "GameTrans {0} · standalone 64-bit process · no admin rights · calls the DeepSeek API only",
+            Theme.L(Loc.F("GameTrans {0} · 独立 64 位进程 · 默认无需管理员权限（模拟输入在游戏以管理员运行时建议提权）· 仅调用 DeepSeek API",
+                "GameTrans {0} · standalone 64-bit process · no admin rights by default (elevation recommended for simulated input when the game runs as administrator) · calls the DeepSeek API only",
                 AppInfo.Version), 12, Theme.Sub),
             Theme.L(Loc.T("快捷键优先用 RegisterHotKey 注册，并用 GetAsyncKeyState 低频轮询兜底（不使用全局钩子）；叠加层点击穿透并已从屏幕截图中排除。",
                 "Hotkeys use RegisterHotKey with a low-frequency GetAsyncKeyState fallback (no global hooks); the overlay is click-through and excluded from screen capture."),
@@ -907,5 +951,22 @@ public sealed class SettingsWindow : Window
         Loc.SetLanguage(_s.Ui.Language);
         _onSave(_s);
         Close();
+
+        // 模拟输入依赖 SendInput：游戏 / 加速器以管理员运行时，普通权限进程会被 UIPI 拦截。
+        // 设置已经保存，这里提示用户可选择「以管理员身份重启」。
+        if (!_s.Behavior.SimulateInput || AdminHelper.IsElevated) return;
+
+        if (AdminPromptWindow.ConfirmRestart())
+        {
+            if (_onRestartElevated != null) _onRestartElevated();
+            else
+                ToastWindow.ShowToast(Loc.T("请手动以管理员身份运行 GameTrans 以启用模拟输入",
+                    "Start GameTrans as administrator to enable simulated input"), true);
+        }
+        else
+        {
+            ToastWindow.ShowToast(Loc.T("模拟输入在普通权限下可能被游戏拦截；可稍后以管理员身份重启",
+                "Simulated input may be blocked while running unelevated; restart as administrator later"), true);
+        }
     }
 }

@@ -73,6 +73,33 @@ internal static class SelfTest
             File.WriteAllText(Path.Combine(outDir, "settings.sample.json"), json);
         });
 
+        Step("管理员权限检测与模拟输入提示", () =>
+        {
+            // 只验证不抛异常；CI runner 可能本身就是管理员，因此不断言 IsElevated 的值。
+            _ = AdminHelper.IsElevated;
+            if (!AdminHelper.SimulateInputFullWarning.Contains("管理员", StringComparison.Ordinal))
+                throw new Exception("中文管理员提示缺少关键字");
+            if (!AdminHelper.SimulateInputShortWarning.Contains("模拟输入", StringComparison.Ordinal))
+                throw new Exception("中文模拟输入警示缺少关键字");
+
+            try
+            {
+                Loc.SetLanguage(Loc.English);
+                if (!AdminHelper.SimulateInputFullWarning.Contains("administrator", StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("英文管理员提示缺少关键字");
+                if (!AdminHelper.SimulateInputShortWarning.Contains("Simulated input", StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("英文模拟输入警示缺少关键字");
+            }
+            finally
+            {
+                Loc.SetLanguage(Loc.Chinese);
+            }
+
+            File.WriteAllText(Path.Combine(outDir, "admin-warning.sample.txt"),
+                "elevated: " + AdminHelper.IsElevated + Environment.NewLine +
+                AdminHelper.SimulateInputFullWarning);
+        });
+
         Step("模拟输入文本规整", () =>
         {
             if (InputSimulator.Sanitize(null) != "") throw new Exception("null 规整异常");
