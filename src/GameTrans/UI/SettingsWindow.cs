@@ -23,6 +23,7 @@ public sealed class SettingsWindow : Window
     private TextBlock? _regionLabel;
     private Button? _hotkeyTranslateBtn;
     private Button? _hotkeyInputBtn;
+    private Button? _hotkeyRegionBtn;
     private ScrollViewer? _scroll;
     private TextBox? _baseUrlBox;
     private StackPanel? _siteLinks;
@@ -31,7 +32,7 @@ public sealed class SettingsWindow : Window
     private bool _saved;
     private readonly string _languageAtOpen;
 
-    private int _capturingHotkey; // 0=无 1=翻译 2=输入
+    private int _capturingHotkey; // 0=无 1=翻译 2=输入 3=重新选区
 
     /// <summary>英文标签更长，标签列适当加宽。</summary>
     private static double LabelW => Loc.IsEnglish ? 122 : 88;
@@ -638,10 +639,17 @@ public sealed class SettingsWindow : Window
     {
         _hotkeyTranslateBtn = Theme.Btn(_s.Hotkeys.TranslateText, StartCaptureTranslate, false, 150);
         _hotkeyInputBtn = Theme.Btn(_s.Hotkeys.InputText, StartCaptureInput, false, 150);
+        _hotkeyRegionBtn = Theme.Btn(_s.Hotkeys.RegionText, StartCaptureRegion, false, 150);
 
         var hint = Theme.L(Loc.T(
             "点击后按下目标按键组合（可含 Ctrl / Alt / Shift 修饰键）；也支持鼠标滚轮按下、鼠标侧键1、鼠标侧键2；按 Esc 取消录制。",
             "Click, then press the desired key combination (Ctrl / Alt / Shift allowed); mouse middle, side 1 and side 2 are supported; Esc cancels."),
+            12, Theme.Sub);
+
+        var clearRegion = Theme.Btn(Loc.T("清除", "Clear"), ClearRegionHotkey, false, 64);
+        var regionHotkeyHint = Theme.L(Loc.T(
+            "默认不绑定；绑定后可在游戏内直接按该键重新框选识别区域，适合不方便切到托盘菜单的时候。",
+            "Not bound by default; once bound, press it in-game to re-select the capture region without using the tray menu."),
             12, Theme.Sub);
 
         _regionLabel = new TextBlock
@@ -671,6 +679,9 @@ public sealed class SettingsWindow : Window
             Theme.Field(Loc.T("输入热键", "Input hotkey"), Theme.Row(10, _hotkeyInputBtn,
                 Theme.L(Loc.T("以识别区域左上角为锚点弹出输入框", "Opens the input box anchored to the region"),
                     12, Theme.Sub)), LabelW),
+            Theme.Field(Loc.T("重新选区热键", "Select-region hotkey"), Theme.Row(10, _hotkeyRegionBtn, clearRegion),
+                LabelW),
+            regionHotkeyHint,
             hint,
             new Border { Height = 10 },
             Theme.Field(Loc.T("识别区域", "Capture region"), regionRow, LabelW));
@@ -715,6 +726,22 @@ public sealed class SettingsWindow : Window
         _capturingHotkey = 2;
         if (_hotkeyInputBtn != null) _hotkeyInputBtn.Content = Loc.T("按下按键…", "Press a key…");
         Focus();
+    }
+
+    private void StartCaptureRegion()
+    {
+        _capturingHotkey = 3;
+        if (_hotkeyRegionBtn != null) _hotkeyRegionBtn.Content = Loc.T("按下按键…", "Press a key…");
+        Focus();
+    }
+
+    /// <summary>把「重新选区」热键清除为未绑定。</summary>
+    private void ClearRegionHotkey()
+    {
+        _s.Hotkeys.RegionVk = 0;
+        _s.Hotkeys.RegionMods = 0;
+        if (_hotkeyRegionBtn != null) _hotkeyRegionBtn.Content = _s.Hotkeys.RegionText;
+        if (_capturingHotkey == 3) _capturingHotkey = 0;
     }
 
     private void OnPreviewKey(object sender, KeyEventArgs e)
@@ -776,11 +803,17 @@ public sealed class SettingsWindow : Window
             _s.Hotkeys.TranslateMods = mods;
             if (_hotkeyTranslateBtn != null) _hotkeyTranslateBtn.Content = KeyName.Format(mods, vk);
         }
-        else
+        else if (_capturingHotkey == 2)
         {
             _s.Hotkeys.InputVk = vk;
             _s.Hotkeys.InputMods = mods;
             if (_hotkeyInputBtn != null) _hotkeyInputBtn.Content = KeyName.Format(mods, vk);
+        }
+        else if (_capturingHotkey == 3)
+        {
+            _s.Hotkeys.RegionVk = vk;
+            _s.Hotkeys.RegionMods = mods;
+            if (_hotkeyRegionBtn != null) _hotkeyRegionBtn.Content = KeyName.Format(mods, vk);
         }
 
         _capturingHotkey = 0;
@@ -791,6 +824,7 @@ public sealed class SettingsWindow : Window
         _capturingHotkey = 0;
         if (_hotkeyTranslateBtn != null) _hotkeyTranslateBtn.Content = _s.Hotkeys.TranslateText;
         if (_hotkeyInputBtn != null) _hotkeyInputBtn.Content = _s.Hotkeys.InputText;
+        if (_hotkeyRegionBtn != null) _hotkeyRegionBtn.Content = _s.Hotkeys.RegionText;
     }
 
     private UIElement BuildAboutCard()

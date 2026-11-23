@@ -246,7 +246,10 @@ public sealed class StartupWindow : Window
 
         _hotkeyValue.Text = Loc.F("{0} 画面翻译 / {1} 输入翻译",
             "{0} screen translation / {1} input translation",
-            s.Hotkeys.TranslateText, s.Hotkeys.InputText);
+            s.Hotkeys.TranslateText, s.Hotkeys.InputText) +
+            (s.Hotkeys.RegionVk != 0
+                ? Loc.F(" / {0} 重新选区", " / {0} select region", s.Hotkeys.RegionText)
+                : "");
 
         int n = s.Prompt.Glossary?.Count(g => !string.IsNullOrWhiteSpace(g.Term)) ?? 0;
         _glossaryValue.Text = n == 0

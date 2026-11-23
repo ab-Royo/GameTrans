@@ -432,6 +432,28 @@ internal static class SelfTest
             s.Normalize();
             if (s.Hotkeys.TranslateText != "鼠标侧键2") throw new Exception("翻译热键往返异常: " + s.Hotkeys.TranslateText);
             if (s.Hotkeys.InputText != "Shift+鼠标中键") throw new Exception("输入热键往返异常: " + s.Hotkeys.InputText);
+
+            // 重新选区热键：默认不绑定，绑定后可往返序列化
+            var def = new AppSettings();
+            def.Normalize();
+            if (def.Hotkeys.RegionVk != 0 || def.Hotkeys.HasRegionHotkey)
+                throw new Exception("重新选区热键应默认不绑定");
+            if (def.Hotkeys.RegionText != "未绑定")
+                throw new Exception("未绑定热键显示异常: " + def.Hotkeys.RegionText);
+
+            var withRegion = new AppSettings();
+            withRegion.Hotkeys.RegionVk = 0x79; // F10
+            withRegion.Hotkeys.RegionMods = Win32.MOD_CONTROL;
+            withRegion.Normalize();
+            if (!withRegion.Hotkeys.HasRegionHotkey) throw new Exception("重新选区热键未生效");
+            if (withRegion.Hotkeys.RegionText != "Ctrl+F10")
+                throw new Exception("重新选区热键显示异常: " + withRegion.Hotkeys.RegionText);
+
+            var regionJson = JsonSerializer.Serialize(withRegion, AppSettings.JsonOpts);
+            var regionBack = JsonSerializer.Deserialize<AppSettings>(regionJson, AppSettings.JsonOpts)
+                             ?? throw new Exception("重新选区热键反序列化失败");
+            if (regionBack.Hotkeys.RegionVk != 0x79 || regionBack.Hotkeys.RegionMods != Win32.MOD_CONTROL)
+                throw new Exception("重新选区热键往返异常");
         });
 
         var report = string.Join(Environment.NewLine,

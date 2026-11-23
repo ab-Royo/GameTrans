@@ -20,6 +20,7 @@ public sealed class HotkeyManager : IDisposable
 {
     private const int IdTranslate = 0x4A01;
     private const int IdInput = 0x4A02;
+    private const int IdRegion = 0x4A03;
     private const int PollIntervalMs = 15;
     private const string PollThreadName = "GameTrans.HotkeyPoll";
 
@@ -41,12 +42,16 @@ public sealed class HotkeyManager : IDisposable
 
     public event Action? TranslatePressed;
     public event Action? InputPressed;
+    public event Action? RegionPressed;
 
     /// <summary>翻译热键是否由 RegisterHotKey 原生注册成功（否则为轮询兼容模式）。</summary>
     public bool TranslateRegisteredNatively { get; private set; }
 
     /// <summary>输入热键是否由 RegisterHotKey 原生注册成功（否则为轮询兼容模式）。</summary>
     public bool InputRegisteredNatively { get; private set; }
+
+    /// <summary>选区热键是否由 RegisterHotKey 原生注册成功；未绑定或为鼠标键时为 false。</summary>
+    public bool RegionRegisteredNatively { get; private set; }
 
     private sealed class Binding
     {
@@ -83,23 +88,28 @@ public sealed class HotkeyManager : IDisposable
     }
 
     /// <summary>
-    /// 注册（或重新注册）两个热键。返回值区分「原生注册全部成功」「仅轮询兼容」「配置错误」三种情况：
-    /// 配置错误（两个热键重复等）需要用户处理；轮询兼容不是致命错误，功能仍可用。
+    /// 注册（或重新注册）热键。<paramref name="regionVk"/> 为 0 表示不绑定「重新选区」热键（默认）；
+    /// 返回值区分「原生注册全部成功」「仅轮询兼容」「配置错误」三种情况：
+    /// 配置错误（热键重复等）需要用户处理；轮询兼容不是致命错误，功能仍可用。
     /// </summary>
-    public HotkeyRegistration Register(uint translateMods, uint translateVk, uint inputMods, uint inputVk)
+    public HotkeyRegistration Register(uint translateMods, uint translateVk, uint inputMods, uint inputVk,
+        uint regionMods = 0, uint regionVk = 0)
     {
         Unregister();
         var errors = new List<string>();
         var notes = new List<string>();
-        var bindings = new List<Binding>(2);
+        var bindings = new List<Binding>(3);
 
         var translate = AddBinding(bindings, IdTranslate, translateMods, translateVk,
-            Loc.T("翻译", "Translate"), () => TranslatePressed?.Invoke(), errors, notes);
+            Loc.T("翻译", "Translate"), () => TranslatePressed?.Invoke(), optional: false, errors, notes);
         var input = AddBinding(bindings, IdInput, inputMods, inputVk,
-            Loc.T("输入", "Input"), () => InputPressed?.Invoke(), errors, notes);
+            Loc.T("输入", "Input"), () => InputPressed?.Invoke(), optional: false, errors, notes);
+        var region = AddBinding(bindings, IdRegion, regionMods, regionVk,
+            Loc.T("重新选区", "Select region"), () => RegionPressed?.Invoke(), optional: true, errors, notes);
 
         TranslateRegisteredNatively = translate is { IsMouse: false, RegisteredNatively: true };
         InputRegisteredNatively = input is { IsMouse: false, RegisteredNatively: true };
+        RegionRegisteredNatively = region is { IsMouse: false, RegisteredNatively: true };
 
         Volatile.Write(ref _bindings, bindings.ToArray());
         SyncPollThread();
@@ -116,11 +126,12 @@ public sealed class HotkeyManager : IDisposable
     }
 
     private Binding? AddBinding(List<Binding> bindings, int id, uint mods, uint vk, string label, Action fire,
-        List<string> errors, List<string> notes)
+        bool optional, List<string> errors, List<string> notes)
     {
         if (vk == 0)
         {
-            errors.Add(Loc.F("{0}热键未设置", "{0} hotkey is not set", label));
+            // 可选热键（重新选区）默认不绑定，未设置不是错误
+            if (!optional) errors.Add(Loc.F("{0}热键未设置", "{0} hotkey is not set", label));
             return null;
         }
 
@@ -372,9 +383,11 @@ public sealed class HotkeyManager : IDisposable
         // 只注销原生注册成功的键盘热键（鼠标键未注册）
         if (TranslateRegisteredNatively) Win32.UnregisterHotKey(_source.Handle, IdTranslate);
         if (InputRegisteredNatively) Win32.UnregisterHotKey(_source.Handle, IdInput);
+        if (RegionRegisteredNatively) Win32.UnregisterHotKey(_source.Handle, IdRegion);
 
         TranslateRegisteredNatively = false;
         InputRegisteredNatively = false;
+        RegionRegisteredNatively = false;
     }
 
     public void Dispose()
@@ -388,7 +401,7 @@ public sealed class HotkeyManager : IDisposable
 /// <summary>热键注册结果：区分「配置错误」与「轮询兜底」。</summary>
 public sealed class HotkeyRegistration
 {
-    /// <summary>两个热键都由 RegisterHotKey 原生注册成功。</summary>
+    /// <summary>所有已绑定热键都由 RegisterHotKey 原生注册成功（未绑定的可选热键不计入）。</summary>
     public bool AllNativeRegistered { get; init; }
 
     /// <summary>存在需要用户处理的配置错误（例如两个热键重复、热键未设置）。</summary>

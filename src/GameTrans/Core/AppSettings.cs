@@ -72,6 +72,7 @@ public sealed class AppSettings
 
         if (Hotkeys.TranslateVk == 0) Hotkeys.TranslateVk = 0x77; // F8
         if (Hotkeys.InputVk == 0) Hotkeys.InputVk = 0x78;         // F9
+        if (Hotkeys.RegionVk == 0) Hotkeys.RegionMods = 0;        // 0 = 未绑定，保持可选
 
         if (Region.HasRegion) Region.Normalize();
     }
@@ -174,11 +175,21 @@ public sealed class HotkeyOptions
     public uint InputVk { get; set; } = 0x78;     // F9
     public uint InputMods { get; set; }
 
+    /// <summary>重新设置识别区域的热键；0 表示未绑定（默认）。</summary>
+    public uint RegionVk { get; set; }
+    public uint RegionMods { get; set; }
+
     [JsonIgnore]
     public string TranslateText => KeyName.Format(TranslateMods, TranslateVk);
 
     [JsonIgnore]
     public string InputText => KeyName.Format(InputMods, InputVk);
+
+    [JsonIgnore]
+    public bool HasRegionHotkey => RegionVk != 0;
+
+    [JsonIgnore]
+    public string RegionText => RegionVk == 0 ? Loc.T("未绑定", "Not bound") : KeyName.Format(RegionMods, RegionVk);
 }
 
 public sealed class RegionOptions

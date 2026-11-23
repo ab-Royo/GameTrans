@@ -39,6 +39,7 @@ public sealed class TrayApp : IDisposable
 
     private long _lastTranslateFireTick;
     private long _lastInputFireTick;
+    private long _lastRegionFireTick;
 
     public TrayApp(AppSettings settings)
     {
@@ -47,6 +48,7 @@ public sealed class TrayApp : IDisposable
 
         _hotkeys.TranslatePressed += () => TranslateHotkey();
         _hotkeys.InputPressed += () => InputHotkey();
+        _hotkeys.RegionPressed += () => RegionHotkey();
 
         // 先把启动页显示出来（用户双击后立刻有反馈），
         // 托盘图标/WinForms 初始化较慢，放到 UI 空闲时再做，避免"静默几秒"。
@@ -83,7 +85,14 @@ public sealed class TrayApp : IDisposable
         ApplyHotkeys(notify: true);
 
         if (!startupShown && !_settings.Region.IsUsable)
-            Toast(Loc.F("尚未设置识别区域，请按 {0} 打开选区", "No capture region yet; press {0} to select one", _settings.Hotkeys.TranslateText), false);
+        {
+            var hint = _settings.Hotkeys.RegionVk != 0
+                ? Loc.F("尚未设置识别区域，请按 {0} 打开选区", "No capture region yet; press {0} to select one",
+                    _settings.Hotkeys.RegionText)
+                : Loc.F("尚未设置识别区域，请按 {0} 打开选区", "No capture region yet; press {0} to select one",
+                    _settings.Hotkeys.TranslateText);
+            Toast(hint, false);
+        }
 
         // 启动后在后台做一次网络探测：启动页显示状态；未显示启动页时，网络异常才弹出提示。
         // 用加速器 / 代理后 DNS 可能整体失效，提前发现比等用户按 F8 才报错更友好。
@@ -99,7 +108,7 @@ public sealed class TrayApp : IDisposable
             null, (_, _) => InputHotkey()));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(new ToolStripMenuItem(Loc.T("启动页…", "Startup page…"), null, (_, _) => ShowStartup()));
-        menu.Items.Add(new ToolStripMenuItem(Loc.T("重新设置识别区域…", "Set capture region…"), null, (_, _) => PickRegion(showToast: true)));
+        menu.Items.Add(new ToolStripMenuItem(RegionMenuText(), null, (_, _) => PickRegion(showToast: true)));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("术语 / 黑话对照表…", "Glossary / Slang…"), null, (_, _) => OpenGlossary()));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("网络诊断…", "Network diagnostics…"), null, (_, _) => _ = DiagnoseNetworkAsync()));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("设置…", "Settings…"), null, (_, _) => OpenSettings()));
@@ -178,10 +187,15 @@ public sealed class TrayApp : IDisposable
         }
     }
 
+    private string RegionMenuText() => _settings.Hotkeys.RegionVk != 0
+        ? Loc.F("重新设置识别区域 ({0})…", "Set capture region ({0})…", _settings.Hotkeys.RegionText)
+        : Loc.T("重新设置识别区域…", "Set capture region…");
+
     private void ApplyHotkeys(bool notify)
     {
         var result = _hotkeys.Register(_settings.Hotkeys.TranslateMods, _settings.Hotkeys.TranslateVk,
-            _settings.Hotkeys.InputMods, _settings.Hotkeys.InputVk);
+            _settings.Hotkeys.InputMods, _settings.Hotkeys.InputVk,
+            _settings.Hotkeys.RegionMods, _settings.Hotkeys.RegionVk);
 
         if (result.HasError)
         {
@@ -195,10 +209,12 @@ public sealed class TrayApp : IDisposable
             Log.Warn("热键兼容模式: " + result.Message);
         }
 
-        Log.Info($"热键注册: {_settings.Hotkeys.TranslateText} / {_settings.Hotkeys.InputText} " +
+        Log.Info($"热键注册: {_settings.Hotkeys.TranslateText} / {_settings.Hotkeys.InputText} / " +
+                 $"{_settings.Hotkeys.RegionText} " +
                  $"-> activate={result.AllNativeRegistered} " +
                  $"(translate native={_hotkeys.TranslateRegisteredNatively}, " +
-                 $"input native={_hotkeys.InputRegisteredNatively})");
+                 $"input native={_hotkeys.InputRegisteredNatively}, " +
+                 $"region native={_hotkeys.RegionRegisteredNatively})");
     }
 
     private static void Toast(string text, bool error) => ToastWindow.ShowToast(text, error);
@@ -320,6 +336,21 @@ public sealed class TrayApp : IDisposable
         if (now - lastTick < DuplicatePressWindowMs) return true;
         lastTick = now;
         return false;
+    }
+
+    /// <summary>重新选区热键（默认未绑定）：打开选区窗口；不依赖 API Key。</summary>
+    private void RegionHotkey()
+    {
+        if (IsDuplicatePress(ref _lastRegionFireTick)) return;
+        if (_regionPicking) return;
+
+        if (_overlay is { IsVisible: true })
+        {
+            _cts?.Cancel();
+            _overlay.Dismiss();
+        }
+
+        if (PickRegion(showToast: true)) _startup?.Refresh(_settings);
     }
 
     /// <summary>F8：显示中则隐藏；否则截图→识别→叠加显示。</summary>
