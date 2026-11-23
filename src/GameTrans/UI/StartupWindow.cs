@@ -134,8 +134,8 @@ public sealed class StartupWindow : Window
 
         var footer = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 8, 0, 0) };
         footer.Children.Add(_showOnStartup);
-        var tip = Theme.L(Loc.T("关闭本页后程序驻留系统托盘；双击托盘图标可再次打开",
-            "The app keeps running in the tray after closing; double-click the tray icon to reopen"), 12, Theme.Sub);
+        var tip = Theme.L(Loc.T("关闭本页后程序驻留系统托盘；双击托盘图标可再次打开本页",
+            "The app keeps running in the tray after closing; double-click the tray icon to reopen this page"), 12, Theme.Sub);
         tip.Margin = new Thickness(0, 4, 0, 0);
         footer.Children.Add(tip);
 

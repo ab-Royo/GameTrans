@@ -72,7 +72,7 @@ public sealed class TrayApp : IDisposable
                 Text = Loc.T("GameTrans 游戏聊天翻译", "GameTrans Game Chat Translator"),
                 Visible = true,
             };
-            _tray.DoubleClick += (_, _) => OpenSettings();
+            _tray.DoubleClick += (_, _) => ShowStartup();
             _tray.ContextMenuStrip = BuildMenu();
         }
         catch (Exception ex)
@@ -431,9 +431,13 @@ public sealed class TrayApp : IDisposable
 
     private void ShowStartup()
     {
-        if (_startup is { IsVisible: true })
+        // 启动页右上角关闭走 Hide，对象仍缓存着：再次打开必须复用（ShowAgain），
+        // 否则每次双击托盘都会再建一个隐藏窗口，旧窗口永远留在 Application.Windows 里。
+        if (_startup != null)
         {
-            _startup.Activate();
+            _startup.ShowAgain();
+            if (_networkProbe != null) _startup.SetNetwork(_networkProbe);
+            _ = RefreshNetworkAsync(notify: false);
             return;
         }
 
