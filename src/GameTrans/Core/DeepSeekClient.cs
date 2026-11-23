@@ -24,6 +24,9 @@ public sealed class DeepSeekClient
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         AutomaticDecompression = DecompressionMethods.All,
+        // 网络被加速器 / 代理接管时，TCP 连接可能长时间无响应；8 秒内连不上就按网络错误返回，
+        // 避免用户以为程序卡死（真正的 HTTP 超时仍由 Api.TimeoutSeconds 控制）。
+        ConnectTimeout = TimeSpan.FromSeconds(8),
     })
     {
         Timeout = Timeout.InfiniteTimeSpan, // 由每次请求的 CTS 控制
@@ -174,8 +177,13 @@ public sealed class DeepSeekClient
             }
             catch (HttpRequestException ex)
             {
-                last = TranslationResult.Fail(Loc.T("网络错误：", "Network error: ") + ex.Message,
-                    sw.ElapsedMilliseconds);
+                // 把「不知道这样的主机」等系统错误映射成可执行提示（加速器 / VPN / 代理常见问题）。
+                var explanation = NetworkDiagnostics.ExplainRequestFailure(ex, s.Api.BaseUrl);
+                last = TranslationResult.Fail(explanation, sw.ElapsedMilliseconds);
+                Log.Warn($"网络请求失败（第 {attempt} 次）：{ex.Message}");
+
+                // DNS 解析失败是确定性错误，700 ms 后重试没有意义，直接返回并提示排查方向。
+                if (NetworkDiagnostics.IsNameResolutionFailure(ex)) return last;
             }
             catch (Exception ex)
             {

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
@@ -149,6 +150,51 @@ internal static class SelfTest
 
             if (Languages.TargetCodes.Length != 4) throw new Exception("目标语言应为 4 种");
             if (Languages.SourceCodes.Length != 5) throw new Exception("源语言应为 auto + 4 种");
+        });
+
+        Step("网络错误分类与诊断建议", () =>
+        {
+            var (host, port) = NetworkDiagnostics.Endpoint("https://api.deepseek.com");
+            if (host != "api.deepseek.com" || port != 443)
+                throw new Exception($"Base URL 解析异常: {host}:{port}");
+            var (fallbackHost, fallbackPort) = NetworkDiagnostics.Endpoint("not a url");
+            if (fallbackHost != "api.deepseek.com" || fallbackPort != 443)
+                throw new Exception("非法 Base URL 未回落到官方端点");
+
+            // 加速器 / 代理改写 DNS 时，.NET 抛出的正是这种「不知道这样的主机」
+            var dns = new HttpRequestException("不知道这样的主机。 (api.deepseek.com:443)",
+                new SocketException((int)SocketError.HostNotFound));
+            if (!NetworkDiagnostics.IsNameResolutionFailure(dns))
+                throw new Exception("DNS 失败未被识别");
+            var dnsText = NetworkDiagnostics.ExplainRequestFailure(dns, "https://api.deepseek.com");
+            if (!dnsText.Contains("DNS", StringComparison.Ordinal) || !dnsText.Contains("api.deepseek.com", StringComparison.Ordinal))
+                throw new Exception("DNS 失败提示缺少主机信息: " + dnsText);
+            if (!dnsText.Contains("加速器", StringComparison.Ordinal))
+                throw new Exception("DNS 失败提示缺少排查建议: " + dnsText);
+
+            var refused = new HttpRequestException("connection refused",
+                new SocketException((int)SocketError.ConnectionRefused));
+            if (NetworkDiagnostics.IsNameResolutionFailure(refused))
+                throw new Exception("连接被拒绝被误判为 DNS 失败");
+            var refusedText = NetworkDiagnostics.ExplainRequestFailure(refused, "https://api.deepseek.com");
+            if (!refusedText.Contains("拒绝", StringComparison.Ordinal))
+                throw new Exception("连接被拒绝提示异常: " + refusedText);
+
+            try
+            {
+                Loc.SetLanguage(Loc.English);
+                var en = NetworkDiagnostics.ExplainRequestFailure(dns, "https://api.deepseek.com");
+                if (!en.Contains("DNS", StringComparison.Ordinal) || !en.Contains("accelerator", StringComparison.OrdinalIgnoreCase))
+                    throw new Exception("英文网络提示异常: " + en);
+            }
+            finally
+            {
+                Loc.SetLanguage(Loc.Chinese);
+            }
+
+            var probe = new NetworkProbe(NetworkStatus.DnsFailed, "summary", "advice", "api.deepseek.com", 443, 10);
+            if (probe.Ok || probe.FullText != "summary\nadvice") throw new Exception("NetworkProbe 展示文本异常");
+            File.WriteAllText(Path.Combine(outDir, "network.sample.txt"), dnsText + "\n\n" + refusedText);
         });
 
         Step("目标 API 预设与链接", () =>

@@ -23,6 +23,11 @@ public sealed class TrayApp : IDisposable
     private CancellationTokenSource? _cts;
     private bool _disposed;
 
+    /// <summary>最近一次网络探测结果，用于启动页与托盘菜单展示。</summary>
+    private NetworkProbe? _networkProbe;
+
+    private bool _networkProbing;
+
     /// <summary>选区窗口是模态的：正在选区时忽略热键，避免连按叠出多个选区窗口。</summary>
     private bool _regionPicking;
 
@@ -79,6 +84,10 @@ public sealed class TrayApp : IDisposable
 
         if (!startupShown && !_settings.Region.IsUsable)
             Toast(Loc.F("尚未设置识别区域，请按 {0} 打开选区", "No capture region yet; press {0} to select one", _settings.Hotkeys.TranslateText), false);
+
+        // 启动后在后台做一次网络探测：启动页显示状态；未显示启动页时，网络异常才弹出提示。
+        // 用加速器 / 代理后 DNS 可能整体失效，提前发现比等用户按 F8 才报错更友好。
+        _ = RefreshNetworkAsync(notify: !startupShown);
     }
 
     private ContextMenuStrip BuildMenu()
@@ -92,6 +101,7 @@ public sealed class TrayApp : IDisposable
         menu.Items.Add(new ToolStripMenuItem(Loc.T("启动页…", "Startup page…"), null, (_, _) => ShowStartup()));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("重新设置识别区域…", "Set capture region…"), null, (_, _) => PickRegion(showToast: true)));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("术语 / 黑话对照表…", "Glossary / Slang…"), null, (_, _) => OpenGlossary()));
+        menu.Items.Add(new ToolStripMenuItem(Loc.T("网络诊断…", "Network diagnostics…"), null, (_, _) => _ = DiagnoseNetworkAsync()));
         menu.Items.Add(new ToolStripMenuItem(Loc.T("设置…", "Settings…"), null, (_, _) => OpenSettings()));
         menu.Items.Add(new ToolStripSeparator());
 
@@ -194,6 +204,64 @@ public sealed class TrayApp : IDisposable
     private static void Toast(string text, bool error) => ToastWindow.ShowToast(text, error);
 
     private string ApiKey => SettingsStore.ReadApiKey(_settings);
+
+    /// <summary>在后台做一次网络探测，并把结果同步到启动页；网络异常时可弹出提示。</summary>
+    private async Task<NetworkProbe?> RefreshNetworkAsync(bool notify)
+    {
+        if (_networkProbing) return _networkProbe;
+        _networkProbing = true;
+        _startup?.SetNetworkChecking();
+        try
+        {
+            var probe = await NetworkDiagnostics.ProbeAsync(_settings.Api.BaseUrl);
+            _networkProbe = probe;
+            _startup?.SetNetwork(probe);
+
+            if (!probe.Ok)
+            {
+                Log.Warn("网络诊断: " + probe.FullText.Replace('\n', ' '));
+                if (notify) Toast(probe.FullText, true);
+            }
+
+            return probe;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("网络诊断异常: " + ex.Message);
+            return _networkProbe;
+        }
+        finally
+        {
+            _networkProbing = false;
+        }
+    }
+
+    /// <summary>托盘菜单「网络诊断…」：立即探测并给出可执行的排查建议。</summary>
+    private async Task DiagnoseNetworkAsync()
+    {
+        var probe = await RefreshNetworkAsync(notify: false);
+        if (probe == null)
+        {
+            Toast(Loc.T("网络诊断失败，请查看日志", "Network diagnostics failed; see the log"), true);
+            return;
+        }
+
+        var text = probe.FullText +
+                   "\n\n" + Loc.F("目标接口：{0}", "Endpoint: {0}", _settings.Api.BaseUrl) +
+                   "\n" + Loc.F("耗时：{0} ms", "Elapsed: {0} ms", probe.ElapsedMs);
+        Window? owner = _startup is { IsVisible: true } startup
+            ? startup
+            : _settingsWindow is { IsVisible: true } settings
+                ? settings
+                : null;
+        var title = Loc.T("GameTrans 网络诊断", "GameTrans Network Diagnostics");
+        if (owner != null)
+            System.Windows.MessageBox.Show(owner, text, title, MessageBoxButton.OK,
+                probe.Ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+        else
+            System.Windows.MessageBox.Show(text, title, MessageBoxButton.OK,
+                probe.Ok ? MessageBoxImage.Information : MessageBoxImage.Warning);
+    }
 
     private bool EnsureApiKey()
     {
@@ -326,6 +394,9 @@ public sealed class TrayApp : IDisposable
         {
             _overlay.UpdateText(Loc.T("翻译失败\n", "Translation failed\n") + r.Error, null);
             Log.Warn("翻译失败: " + r.Error);
+
+            // 网络层面的失败（status=0）顺带刷新网络状态，启动页/托盘能直接看到排查建议。
+            if (r.StatusCode == 0) _ = RefreshNetworkAsync(notify: false);
         }
     }
 
@@ -381,6 +452,8 @@ public sealed class TrayApp : IDisposable
         _startup.Closed += (_, _) => _startup = null;
         _startup.Show();
         _startup.Activate();
+        if (_networkProbe != null) _startup.SetNetwork(_networkProbe);
+        _ = RefreshNetworkAsync(notify: false);
     }
 
     private void OpenGlossary()

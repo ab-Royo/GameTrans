@@ -16,10 +16,13 @@ public sealed class StartupWindow : Window
 
     private readonly TextBlock _apiValue;
     private readonly TextBlock _apiHint;
+    private readonly TextBlock _networkValue;
+    private readonly TextBlock _networkHint;
     private readonly TextBlock _regionValue;
     private readonly TextBlock _hotkeyValue;
     private readonly TextBlock _glossaryValue;
     private readonly CheckBox _showOnStartup;
+    private NetworkProbe? _network;
 
     public StartupWindow(AppSettings s,
         Action onPickRegion, Action onOpenGlossary, Action onOpenSettings,
@@ -35,7 +38,7 @@ public sealed class StartupWindow : Window
         Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize;
         Width = 660;
-        Height = 548;
+        SizeToContent = SizeToContent.Height;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowInTaskbar = true;
         Title = "GameTrans";
@@ -44,6 +47,10 @@ public sealed class StartupWindow : Window
 
         _apiValue = Theme.L("", 13, Theme.Text, true);
         _apiHint = Theme.L("", 12, Theme.Sub);
+        _networkValue = Theme.L("", 13, Theme.Text, true);
+        _networkHint = Theme.L("", 12, Theme.Sub);
+        _networkHint.Margin = new Thickness(0, 2, 0, 0);
+        _networkHint.Visibility = Visibility.Collapsed;
         _regionValue = Theme.L("", 13, Theme.Text, true);
         _hotkeyValue = Theme.L("", 13, Theme.Text);
         _glossaryValue = Theme.L("", 13, Theme.Text, true);
@@ -81,6 +88,9 @@ public sealed class StartupWindow : Window
         var statusCard = Theme.Card(Loc.T("运行状态", "Status"),
             StatusRow(Loc.T("模型接口", "Model API"), _apiValue),
             _apiHint,
+            new Border { Height = 8 },
+            StatusRow(Loc.T("网络", "Network"), _networkValue),
+            _networkHint,
             new Border { Height = 8 },
             StatusRow(Loc.T("识别区域", "Capture region"), _regionValue),
             new Border { Height = 8 },
@@ -242,6 +252,59 @@ public sealed class StartupWindow : Window
         _glossaryValue.Text = n == 0
             ? Loc.T("未配置（可在「术语表」中添加）", "Not configured (add entries in Glossary)")
             : Loc.F("{0} 条", "{0} entries", n);
+
+        UpdateNetworkText();
+    }
+
+    /// <summary>网络探测进行中（只在还没有成功结果时显示，避免每次打开启动页都闪一下）。</summary>
+    public void SetNetworkChecking()
+    {
+        if (_network is { Ok: true }) return;
+        _networkValue.Text = Loc.T("检测中…", "Checking…");
+        _networkValue.Foreground = Theme.Sub;
+        _networkHint.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>更新网络状态；由 TrayApp 在后台探测完成后调用。</summary>
+    public void SetNetwork(NetworkProbe probe)
+    {
+        _network = probe;
+        UpdateNetworkText();
+    }
+
+    private void UpdateNetworkText()
+    {
+        if (_network == null)
+        {
+            _networkValue.Text = Loc.T("尚未检测", "Not checked");
+            _networkValue.Foreground = Theme.Sub;
+            _networkHint.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (_network.Ok)
+        {
+            _networkValue.Text = Loc.F("正常（{0} ms）", "OK ({0} ms)", _network.ElapsedMs);
+            _networkValue.Foreground = new SolidColorBrush(Color.FromRgb(0x8B, 0xE0, 0x9E));
+            _networkHint.Text = Loc.F("已连通 {0}:{1}", "Connected to {0}:{1}", _network.Host, _network.Port);
+            _networkHint.Foreground = Theme.Sub;
+            _networkHint.Visibility = Visibility.Visible;
+            return;
+        }
+
+        _networkValue.Text = _network.Status switch
+        {
+            NetworkStatus.DnsFailed => Loc.T("DNS 解析失败", "DNS lookup failed"),
+            NetworkStatus.Unreachable => Loc.T("目标不可达", "Endpoint unreachable"),
+            NetworkStatus.Timeout => Loc.T("连接超时", "Connection timed out"),
+            NetworkStatus.TlsFailed => Loc.T("TLS 连接失败", "TLS connection failed"),
+            _ => Loc.T("未知错误", "Unknown error"),
+        };
+        _networkValue.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
+        var hint = _network.FullText;
+        _networkHint.Text = string.IsNullOrWhiteSpace(hint) ? _network.Summary : hint;
+        _networkHint.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC1, 0x66));
+        _networkHint.Visibility = Visibility.Visible;
     }
 
     public void ShowAgain()
