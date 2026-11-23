@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Authentication;
 
 namespace GameTrans.Core;
 
@@ -140,6 +141,17 @@ public static class NetworkDiagnostics
         if (IsNameResolutionFailure(ex))
             return DnsSummary(host) + "\n" + DnsAdvice(host);
 
+        if (ex is HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError }
+            || FindInnerException<AuthenticationException>(ex) != null)
+        {
+            return Loc.F(
+                "TLS 连接失败：与 {0}:{1} 建立安全连接时失败。加速器 / VPN / 代理可能替换了证书或拦截了 TLS，" +
+                "请关闭或切换加速器 / 代理后重试。",
+                "TLS connection failed: could not establish a secure connection to {0}:{1}. An accelerator / VPN / proxy may be " +
+                "intercepting TLS or replacing certificates; disable or switch it and retry.",
+                host, port);
+        }
+
         var socket = FindSocketException(ex);
         if (socket != null)
         {
@@ -220,6 +232,17 @@ public static class NetworkDiagnostics
         for (int depth = 0; ex != null && depth < 8; depth++)
         {
             if (ex is SocketException socket) return socket;
+            ex = ex.InnerException;
+        }
+
+        return null;
+    }
+
+    private static T? FindInnerException<T>(Exception? ex) where T : Exception
+    {
+        for (int depth = 0; ex != null && depth < 8; depth++)
+        {
+            if (ex is T match) return match;
             ex = ex.InnerException;
         }
 

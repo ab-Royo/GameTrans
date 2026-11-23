@@ -26,7 +26,8 @@ public sealed class TrayApp : IDisposable
     /// <summary>最近一次网络探测结果，用于启动页与托盘菜单展示。</summary>
     private NetworkProbe? _networkProbe;
 
-    private bool _networkProbing;
+    /// <summary>进行中的探测任务：重复调用时复用，避免同时发起多次 DNS / TCP 探测。</summary>
+    private Task<NetworkProbe?>? _networkTask;
 
     /// <summary>选区窗口是模态的：正在选区时忽略热键，避免连按叠出多个选区窗口。</summary>
     private bool _regionPicking;
@@ -226,10 +227,16 @@ public sealed class TrayApp : IDisposable
     private string ApiKey => SettingsStore.ReadApiKey(_settings);
 
     /// <summary>在后台做一次网络探测，并把结果同步到启动页；网络异常时可弹出提示。</summary>
-    private async Task<NetworkProbe?> RefreshNetworkAsync(bool notify)
+    private Task<NetworkProbe?> RefreshNetworkAsync(bool notify)
     {
-        if (_networkProbing) return _networkProbe;
-        _networkProbing = true;
+        // 探测进行中时复用同一个任务：托盘「网络诊断…」在启动探测未完成时也不会拿到空结果。
+        if (_networkTask is { IsCompleted: false }) return _networkTask;
+        _networkTask = ProbeNetworkCoreAsync(notify);
+        return _networkTask;
+    }
+
+    private async Task<NetworkProbe?> ProbeNetworkCoreAsync(bool notify)
+    {
         _startup?.SetNetworkChecking();
         try
         {
@@ -249,10 +256,6 @@ public sealed class TrayApp : IDisposable
         {
             Log.Warn("网络诊断异常: " + ex.Message);
             return _networkProbe;
-        }
-        finally
-        {
-            _networkProbing = false;
         }
     }
 
