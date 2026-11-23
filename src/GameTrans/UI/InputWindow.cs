@@ -380,6 +380,10 @@ public sealed class InputWindow : Window
             {
                 _status.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
                 _status.Text = r.Error ?? Loc.T("翻译失败", "Translation failed");
+
+                // 网络类错误带有排查建议（多行），状态栏只有一行且会省略，额外用气泡完整提示。
+                if (!string.IsNullOrEmpty(r.Error) && r.Error.Contains('\n'))
+                    ToastWindow.ShowToast(r.Error, true);
                 return;
             }
 

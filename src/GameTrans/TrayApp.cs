@@ -500,7 +500,12 @@ public sealed class TrayApp : IDisposable
 
     private void OpenGlossary()
     {
-        var edited = GlossaryWindow.Edit(_settings.Prompt.Glossary, _startup ?? (Window?)_settingsWindow);
+        Window? owner = _startup is { IsVisible: true } startup
+            ? startup
+            : _settingsWindow is { IsVisible: true } settings
+                ? settings
+                : null;
+        var edited = GlossaryWindow.Edit(_settings.Prompt.Glossary, owner);
         if (edited == null) return;
         _settings.Prompt.Glossary = edited;
         SettingsStore.Save(_settings);
@@ -539,10 +544,13 @@ public sealed class TrayApp : IDisposable
         Loc.SetLanguage(_settings.Ui.Language);
         RebuildTray();
 
-        if (_startup is { IsVisible: true })
+        if (_startup != null)
         {
+            // 启动页的文案在构造时按 Loc 生成；语言变化后必须重建。
+            // 隐藏状态只需丢弃旧窗口（下次 ShowStartup 会用新语言新建），不要把它弹出来。
+            bool wasVisible = _startup.IsVisible;
             _startup.Close();
-            ShowStartup();
+            if (wasVisible) ShowStartup();
         }
     }
 
