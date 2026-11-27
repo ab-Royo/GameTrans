@@ -57,6 +57,7 @@ internal static class SelfTest
             if (s.Prompt.InputTargetLanguage != Languages.English) throw new Exception("F9 默认目标语言应为英文");
             if (s.Behavior.SimulateInput) throw new Exception("模拟输入默认应关闭");
             if (!s.Behavior.CopyInputResult) throw new Exception("F9 默认应自动复制到剪贴板");
+            if (!s.Overlay.ExcludeFromCapture) throw new Exception("叠加层默认应从截图 / 录制中排除");
 
             var json = JsonSerializer.Serialize(s, AppSettings.JsonOpts);
             var back = JsonSerializer.Deserialize<AppSettings>(json, AppSettings.JsonOpts)
@@ -70,6 +71,15 @@ internal static class SelfTest
             var simBack = JsonSerializer.Deserialize<AppSettings>(simJson, AppSettings.JsonOpts)
                           ?? throw new Exception("模拟输入反序列化失败");
             if (!simBack.Behavior.SimulateInput) throw new Exception("模拟输入未往返");
+
+            // 关闭「从截图 / 录制中排除」后必须原样往返（关闭状态不能被默认值覆盖回去）
+            s.Overlay.ExcludeFromCapture = false;
+            var capJson = JsonSerializer.Serialize(s, AppSettings.JsonOpts);
+            var capBack = JsonSerializer.Deserialize<AppSettings>(capJson, AppSettings.JsonOpts)
+                          ?? throw new Exception("叠加层排除标记反序列化失败");
+            if (capBack.Overlay.ExcludeFromCapture) throw new Exception("叠加层排除标记未往返");
+            s.Overlay.ExcludeFromCapture = true;
+
             File.WriteAllText(Path.Combine(outDir, "settings.sample.json"), json);
         });
 
@@ -285,6 +295,8 @@ internal static class SelfTest
         else
         Step($"截屏 {region.Width}x{region.Height} @ ({region.Left},{region.Top})", () =>
         {
+            // 与 TrayApp 的截图路径一致：先等 DWM 提交一帧，再取图
+            Win32.DwmFlush();
             shot = ScreenCapture.Capture(region);
             if (shot.PixelWidth != region.Width || shot.PixelHeight != region.Height)
                 throw new Exception($"尺寸不符: {shot.PixelWidth}x{shot.PixelHeight}");
@@ -338,6 +350,43 @@ internal static class SelfTest
             using var ms = new MemoryStream();
             enc.Save(ms);
             File.WriteAllBytes(Path.Combine(outDir, "overlay-render.png"), ms.ToArray());
+        });
+
+        if (headless)
+        {
+            log.AppendLine("[SKIP] 叠加层捕获排除标记（headless 模式）");
+        }
+        else
+        Step("叠加层捕获排除标记", () =>
+        {
+            var s = new AppSettings();
+            s.Normalize();
+            var region = new RegionPx(0, 0, 320, 120);
+
+            // 默认开启：显示时带 WDA_EXCLUDEFROMCAPTURE，隐藏时必须释放（否则继续阻断 NVIDIA 录制）
+            var on = new OverlayWindow();
+            on.ShowText(region, s, "affinity on");
+            var onHwnd = new System.Windows.Interop.WindowInteropHelper(on).Handle;
+            Win32.GetWindowDisplayAffinity(onHwnd, out uint shown);
+            on.Dismiss();
+            Win32.GetWindowDisplayAffinity(onHwnd, out uint hidden);
+            on.Close();
+            if (shown != Win32.WDA_EXCLUDEFROMCAPTURE)
+                throw new Exception($"默认应带 WDA_EXCLUDEFROMCAPTURE，实际 0x{shown:X}");
+            if (hidden != Win32.WDA_NONE)
+                throw new Exception($"隐藏后应释放排除标记，实际 0x{hidden:X}");
+
+            // 关闭设置：不再带标记，NVIDIA 即时重放不再被阻断
+            s.Overlay.ExcludeFromCapture = false;
+            var off = new OverlayWindow();
+            off.ShowText(region, s, "affinity off");
+            var offHwnd = new System.Windows.Interop.WindowInteropHelper(off).Handle;
+            Win32.GetWindowDisplayAffinity(offHwnd, out uint plain);
+            off.Close();
+            if (plain != Win32.WDA_NONE)
+                throw new Exception($"关闭设置后不应带排除标记，实际 0x{plain:X}");
+
+            log.AppendLine($"       shown=0x{shown:X} hidden=0x{hidden:X} off=0x{plain:X}");
         });
 
         Step("请求体结构（视觉翻译）", () =>

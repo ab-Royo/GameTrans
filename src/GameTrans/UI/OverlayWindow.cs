@@ -6,7 +6,7 @@ using GameTrans.Core;
 namespace GameTrans.UI;
 
 /// <summary>
-/// 文本叠加层：置顶、点击穿透、不抢焦点、并且从屏幕截图中排除（避免把自己的译文再识别一遍）。
+/// 文本叠加层：置顶、点击穿透、不抢焦点，并可按设置从截图 / 录制中排除（避免把自己的译文再识别一遍）。
 ///
 /// 尺寸策略（v1.1）：
 ///   以选区为锚点，宽度=选区宽度；高度取 max(选区高度, 实测文本高度)。
@@ -18,6 +18,7 @@ public sealed class OverlayWindow : Window
     private readonly OverlayContent _content;
     private RegionPx _region;
     private AppSettings? _settings;
+    private bool _excludeFromCapture = true;
 
     public OverlayWindow()
     {
@@ -47,9 +48,24 @@ public sealed class OverlayWindow : Window
         ex |= Win32.WS_EX_TRANSPARENT | Win32.WS_EX_NOACTIVATE | Win32.WS_EX_TOOLWINDOW;
         Win32.SetWindowLongPtr(hwnd, Win32.GWL_EXSTYLE, (IntPtr)ex);
 
-        // 关键：叠加层不进入任何截图（Win10 2004+）；不支持时静默降级
-        if (!Win32.SetWindowDisplayAffinity(hwnd, Win32.WDA_EXCLUDEFROMCAPTURE))
-            Win32.SetWindowDisplayAffinity(hwnd, Win32.WDA_NONE);
+        ApplyCaptureExclusion();
+    }
+
+    /// <summary>
+    /// 按当前设置决定叠加层是否从截图 / 录制中排除（<see cref="Win32.WDA_EXCLUDEFROMCAPTURE"/>）。
+    ///
+    /// 该标记会让 NVIDIA App / GeForce Experience 的即时重放把窗口当作受保护内容并强制停录，
+    /// 因此改为可选项：关闭时依赖 <c>TrayApp</c> 截图前先隐藏叠加层，不再带标记。
+    /// </summary>
+    private void ApplyCaptureExclusion()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return;
+
+        if (_excludeFromCapture && Win32.SetWindowDisplayAffinity(hwnd, Win32.WDA_EXCLUDEFROMCAPTURE))
+            return;
+
+        Win32.SetWindowDisplayAffinity(hwnd, Win32.WDA_NONE);
     }
 
     public bool IsShowing => _region.IsUsable && IsVisible;
@@ -58,9 +74,13 @@ public sealed class OverlayWindow : Window
     {
         _region = region;
         _settings = settings;
+        _excludeFromCapture = settings.Overlay.ExcludeFromCapture;
         _content.SetText(text, status);
         Relayout();
         if (!IsVisible) Show();
+
+        // 隐藏期间标记会被释放，每次显示都按当前设置重新应用。
+        ApplyCaptureExclusion();
     }
 
     public void UpdateText(string text, string? status = null)
@@ -73,7 +93,14 @@ public sealed class OverlayWindow : Window
 
     public void Dismiss()
     {
-        if (IsVisible) Hide();
+        if (!IsVisible) return;
+
+        // 隐藏期间释放排除标记：带 WDA_EXCLUDEFROMCAPTURE 的窗口即使不可见，
+        // 也会让 NVIDIA 即时重放被判定为受阻（必须关掉进程才能重开录制）。
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd != IntPtr.Zero) Win32.SetWindowDisplayAffinity(hwnd, Win32.WDA_NONE);
+
+        Hide();
     }
 
     private static double Clamp(double v, double lo, double hi) => v < lo ? lo : (v > hi ? hi : v);

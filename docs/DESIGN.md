@@ -65,7 +65,9 @@ src/GameTrans
 | `WS_EX_NOACTIVATE` | 点击不激活、不抢焦点 |
 | `WS_EX_TOOLWINDOW` | 不出现在 Alt+Tab |
 | `Topmost` | 置顶 |
-| `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` | 从屏幕截图中排除，避免重复识别自身译文 |
+| `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)` | 从屏幕截图中排除，避免重复识别自身译文（**可关闭**，见下） |
+
+> **NVIDIA 即时重放兼容（1.6.0 起）**：`WDA_EXCLUDEFROMCAPTURE` 是驱动级「防录制」标记。NVIDIA App / GeForce Experience 的即时重放（桌面捕获）走 NvFBC，会把带该标记的窗口判定为受保护内容并强制停录（提示「GameTrans 正在阻止桌面录制」），即使窗口已隐藏也可能无法重开录制。因此该标记改为配置项 `overlay.excludeFromCapture`（默认 `true`，保持原有行为）：关闭时不设置标记，改由「截图前 `Dismiss()` → `DwmFlush()` 等一帧 → 截图」保证不把自己截进去；窗口隐藏时主动恢复 `WDA_NONE`，不再阻塞录制。
 
 尺寸求解（`OverlayWindow.Relayout`）：
 

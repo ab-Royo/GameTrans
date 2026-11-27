@@ -4,7 +4,7 @@ namespace GameTrans.Core;
 public static class AppInfo
 {
     public const string Name = "GameTrans";
-    public const string Version = "1.5.0";
+    public const string Version = "1.6.0";
 
     /// <summary>一句话说明，随界面语言切换。</summary>
     public static string Tagline => Loc.T(

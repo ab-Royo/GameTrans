@@ -166,6 +166,14 @@ public sealed class OverlayOptions
 
     /// <summary>文字整体缩放上限（防止超小区域字号爆炸）。</summary>
     public bool ClickThrough { get; set; } = true;
+
+    /// <summary>
+    /// 叠加层从截图 / 录制中排除（<c>WDA_EXCLUDEFROMCAPTURE</c>）。默认开启。
+    ///
+    /// 代价：NVIDIA App / GeForce Experience 的即时重放（桌面捕获）会把该窗口判定为受保护内容，
+    /// 在叠加层出现时强制关闭录制。使用 NVIDIA 录制时请关闭本项，改由「截图前先隐藏叠加层」兜底。
+    /// </summary>
+    public bool ExcludeFromCapture { get; set; } = true;
 }
 
 public sealed class HotkeyOptions

@@ -29,6 +29,7 @@ public sealed class SettingsWindow : Window
     private TextBox? _baseUrlBox;
     private StackPanel? _siteLinks;
     private Border? _simulateWarning;
+    private Border? _captureWarning;
 
     private bool _siteTouched;
     private bool _saved;
@@ -466,6 +467,43 @@ public sealed class SettingsWindow : Window
             : Visibility.Collapsed;
     }
 
+    /// <summary>「从截图 / 录制中排除叠加层」开启时的醒目警示：说明 NVIDIA 即时重放会被强制停止。</summary>
+    private Border BuildCaptureWarning()
+    {
+        var warn = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(34, 0xFF, 0x6B, 0x6B)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 6, 0, 6),
+            Visibility = Visibility.Collapsed,
+            Child = new TextBlock
+            {
+                Text = "⚠ " + Loc.T(
+                    "已开启：叠加层出现时，NVIDIA App / GeForce Experience 的即时重放（桌面捕获）会被强制关闭。使用 NVIDIA 录制时请关闭此项。",
+                    "Enabled: NVIDIA App / GeForce Experience Instant Replay (desktop capture) is force-stopped whenever the overlay appears. Turn this off if you record with NVIDIA."),
+                FontFamily = Theme.Font,
+                FontSize = 12.5,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xB4, 0xB4)),
+                TextWrapping = TextWrapping.Wrap,
+            },
+        };
+        _captureWarning = warn;
+        UpdateCaptureWarning();
+        return warn;
+    }
+
+    private void UpdateCaptureWarning()
+    {
+        if (_captureWarning == null) return;
+        _captureWarning.Visibility = _s.Overlay.ExcludeFromCapture
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     /// <summary>语言下拉框：显示名随界面语言变化，存储为语言代码。</summary>
     private DropDown LanguageDrop(string currentCode, bool allowAuto, Action<string> onChange, double width)
     {
@@ -605,6 +643,20 @@ public sealed class SettingsWindow : Window
         var clickThrough = Theme.Chk(Loc.T("点击穿透（不拦截游戏输入）", "Click-through (game keeps input)"),
             _s.Overlay.ClickThrough, v => _s.Overlay.ClickThrough = v);
 
+        var excludeFromCapture = Theme.Chk(Loc.T(
+                "从截图 / 录制中排除叠加层（NVIDIA 即时重放会因此被停止）",
+                "Exclude overlay from capture (NVIDIA Instant Replay stops)"),
+            _s.Overlay.ExcludeFromCapture, v =>
+            {
+                _s.Overlay.ExcludeFromCapture = v;
+                UpdateCaptureWarning();
+            });
+        var excludeHint = Theme.L(Loc.T(
+            "开启后叠加层带 WDA_EXCLUDEFROMCAPTURE：截图不含自身译文，避免重复识别；但 NVIDIA App / GeForce Experience 会把该窗口判定为受保护内容。关闭后改由「截图前先隐藏叠加层」避免重复识别，NVIDIA 录制不受影响。",
+            "When on, the overlay carries WDA_EXCLUDEFROMCAPTURE: screenshots never contain its own translation, so it is not re-recognized; NVIDIA App / GeForce Experience treats such a window as protected content. When off, the overlay is hidden before each capture instead and NVIDIA recording keeps working."),
+            12, Theme.Sub);
+        var excludeWarning = BuildCaptureWarning();
+
         return Theme.Card(Loc.T("文本叠加层", "Text overlay"),
             previewHost,
             new Border { Height = 10 },
@@ -622,7 +674,11 @@ public sealed class SettingsWindow : Window
             Theme.Field(Loc.T("超出选区", "Overflow"), Theme.Row(10, overflow,
                 Theme.L(Loc.T("缩字下限", "Min font"), 12, Theme.Sub), minFont), LabelW),
             Theme.Row(18, showStatus, shadow),
-            Theme.Row(18, autoFont, clickThrough));
+            Theme.Row(18, autoFont, clickThrough),
+            new Border { Height = 8 },
+            excludeFromCapture,
+            excludeHint,
+            excludeWarning);
     }
 
     private StackPanel ColorField(string initial, Action<string> onChange)
@@ -920,8 +976,8 @@ public sealed class SettingsWindow : Window
             Theme.L(Loc.F("GameTrans {0} · 独立 64 位进程 · 默认无需管理员权限（模拟输入在游戏以管理员运行时建议提权）· 仅调用 DeepSeek API",
                 "GameTrans {0} · standalone 64-bit process · no admin rights by default (elevation recommended for simulated input when the game runs as administrator) · calls the DeepSeek API only",
                 AppInfo.Version), 12, Theme.Sub),
-            Theme.L(Loc.T("快捷键优先用 RegisterHotKey 注册，并用 GetAsyncKeyState 低频轮询兜底（不使用全局钩子）；叠加层点击穿透并已从屏幕截图中排除。",
-                "Hotkeys use RegisterHotKey with a low-frequency GetAsyncKeyState fallback (no global hooks); the overlay is click-through and excluded from screen capture."),
+            Theme.L(Loc.T("快捷键优先用 RegisterHotKey 注册，并用 GetAsyncKeyState 低频轮询兜底（不使用全局钩子）；叠加层点击穿透，默认从截图 / 录制中排除（可在「文本叠加层」中关闭，以兼容 NVIDIA 即时重放）。",
+                "Hotkeys use RegisterHotKey with a low-frequency GetAsyncKeyState fallback (no global hooks); the overlay is click-through and excluded from capture by default (turn it off in Text overlay to keep NVIDIA Instant Replay working)."),
                 12, Theme.Sub),
             new Border { Height = 8 },
             links,

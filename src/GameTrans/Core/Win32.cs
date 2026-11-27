@@ -109,6 +109,10 @@ internal static class Win32
     [DllImport("user32.dll")]
     public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
 
+    /// <summary>等待 DWM 提交下一帧（阻塞到下一个刷新周期），用于截图前确认窗口隐藏已生效。</summary>
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmFlush();
+
     [DllImport("user32.dll")]
     public static extern bool GetWindowDisplayAffinity(IntPtr hWnd, out uint dwAffinity);
 

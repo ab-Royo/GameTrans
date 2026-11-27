@@ -397,8 +397,10 @@ public sealed class TrayApp : IDisposable
         _overlay ??= new OverlayWindow();
         _overlay.Dismiss();
 
-        // 让叠加层先真正消失，避免把自己截进去（双保险：叠加层本身已 WDA_EXCLUDEFROMCAPTURE）
-        await Task.Delay(80, ct).ConfigureAwait(true);
+        // 让叠加层先真正消失，避免把自己截进去。DwmFlush 阻塞到下一帧提交，
+        // 比固定长延时可靠：叠加层关闭「排除标记」后，这里是唯一的保险。
+        Win32.DwmFlush();
+        await Task.Delay(16, ct).ConfigureAwait(true);
 
         byte[] png;
         try

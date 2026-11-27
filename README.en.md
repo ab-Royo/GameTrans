@@ -8,10 +8,10 @@ A real-time chat translator for PC games. It captures a chosen screen region wit
 
 - Standalone 64-bit process, single-file self-contained build, **no administrator rights required by default** (simulated input may need an elevated restart when the game / accelerator runs elevated)
 - No dependency on the game client, account system or accelerator software
-- Click-through overlay that never steals focus and is excluded from screen capture (so it never translates itself)
+- Click-through overlay that never steals focus; it can be excluded from screen capture / recording (turn that off to keep NVIDIA Instant Replay working)
 - UI switchable between **简体中文 / English**; translation direction and target API are dropdowns
 
-Current version: **1.5.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
+Current version: **1.6.0** · Project: [github.com/ab-Royo/GameTrans](https://github.com/ab-Royo/GameTrans) · QQ group: **419733401** · Bilibili: [ab_Roy's channel](https://m.bilibili.com/space/51952428)
 
 ## Contents
 
@@ -44,7 +44,7 @@ Current version: **1.5.0** · Project: [github.com/ab-Royo/GameTrans](https://gi
 | Translation direction | Source: auto / Chinese / English / Korean / Japanese; target: Chinese / English / Korean / Japanese (screen and F9 directions are independent) |
 | Target API | DeepSeek China / DeepSeek International, default follows the UI language, with links to the open platform, API docs and website |
 | Hotkey binding | Keyboard keys plus mouse middle button, side button 1 and side button 2, optionally with `Ctrl` / `Alt` / `Shift`; a polling fallback kicks in when registration fails or a game swallows the key |
-| Overlay style | Background color/opacity, text color, font family/size, padding, corner radius, border and alignment are configurable |
+| Overlay style | Background color/opacity, text color, font family/size, padding, corner radius, border and alignment are configurable; the overlay can optionally be excluded from capture (needed off for NVIDIA Instant Replay) |
 | Overflow strategy | Extend downward by default (same font size), or shrink to fit the region |
 | Glossary | Hand-maintained term → meaning table injected into the prompt to constrain game-specific wording |
 | Startup page | Summarizes model API, network, capture region, hotkeys, glossary and permission warnings, with shortcuts to each setting; opens on tray double-click |
@@ -78,7 +78,7 @@ Current version: **1.5.0** · Project: [github.com/ab-Royo/GameTrans](https://gi
 
 ## Requirements
 
-- Windows 10 2004 or later (the overlay relies on `WDA_EXCLUDEFROMCAPTURE`)
+- Windows 10 2004 or later (the default **Exclude overlay from capture** option relies on `WDA_EXCLUDEFROMCAPTURE`; turning it off removes that requirement)
 - x64 architecture
 - A valid DeepSeek API key (use a model with image input; `deepseek-flash` by default)
 
@@ -230,6 +230,7 @@ Put a `portable.txt` next to the executable, or set the `GAMETRANS_DATA` environ
 | | `autoScaleFont` / `minFontSize` | Font auto-scaling and its lower bound |
 | | `overflowMode` | `expand` downward / `shrink` to fit |
 | | `clickThrough` | Click-through |
+| | `excludeFromCapture` | Exclude the overlay from capture / recording (`WDA_EXCLUDEFROMCAPTURE`), default `true`; when on, NVIDIA Instant Replay is force-stopped — set to `false` if you record with NVIDIA |
 | `hotkeys` | `translateVk` / `translateMods` | Screen translation hotkey, default `F8` (`0x77`); mouse middle / side1 / side2 are `0x04` / `0x05` / `0x06` |
 | | `inputVk` / `inputMods` | Input translation hotkey, default `F9` (`0x78`), same key codes |
 | | `regionVk` / `regionMods` | Select-region hotkey, default `0` = unbound; same key codes |
@@ -299,6 +300,9 @@ dist\GameTrans.exe --selftest .\out
 
 **After enabling an accelerator / VPN / proxy, browsers, `ping` and GameTrans all fail to resolve hosts (DNS failure)**
 This is common when an accelerator rewrites system DNS but only proxies game traffic (Thunder "Mode 2", for example). GameTrans does not change your network settings, but it does: (1) show **DNS lookup failed** on the startup page and in tray → **Network diagnostics…**; (2) put actionable suggestions in the F8 overlay. Try disabling the accelerator or switching its mode and retrying; set the system DNS to `223.5.5.5` / `1.1.1.1`; verify a browser can open `https://api.deepseek.com` before pressing `F8`. If you must keep the accelerator mode, add the DeepSeek API domain to its direct / bypass list.
+
+**Pressing F8 force-stops NVIDIA Instant Replay ("GameTrans is preventing desktop recording")**
+By default the overlay carries `WDA_EXCLUDEFROMCAPTURE` (excluded from capture so its own translation is not re-recognized), and NVIDIA App / GeForce Experience desktop capture treats such a window as protected content, which force-stops Instant Replay. Since 1.6.0 the flag is optional: Settings → **Text overlay** → clear **Exclude overlay from capture**; the overlay is then hidden before each capture and restored afterwards, and NVIDIA recording keeps working (leave it on when you do not record). To keep the flag instead, open NVIDIA App with Alt+Z → Settings → Video capture and turn **Desktop capture** off so only the game is recorded. Instant Replay has to be re-enabled manually after it is stopped.
 
 **Simulated input does not type into the game / saving Settings says administrator rights are required**
 Simulated input uses `SendInput`; when the game or accelerator runs elevated, Windows (UIPI) blocks typing from a non-elevated process. Ticking simulated input shows a red warning, and saving offers **Restart as administrator**. You can also exit and right-click `GameTrans.exe` → **Run as administrator**. To stay unelevated, turn simulated input off and keep using clipboard + manual paste.
