@@ -13,7 +13,7 @@
     <StartupObject>GameTrans.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.6.0</Version>
+    <Version>1.6.1</Version>
     <Product>GameTrans</Product>
     <AssemblyTitle>GameTrans 游戏聊天翻译 / Game Chat Translator</AssemblyTitle>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -25,6 +25,11 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- 关闭 .NET 9 默认写入的 Intel CET（硬件影子栈）兼容标记。
+         部分 Intel 11 代及以上 CPU + 较旧 Windows 构建的机器上，带该标记的
+         apphost / singlefilehost 会在 CoreCLR 初始化阶段 fail-fast
+         （0xC0000602，表现为双击无窗口、无日志、进程静默退出）。详见 CHANGELOG 1.6.1。 -->
+    <CETCompat>false</CETCompat>
     <DebugType>embedded</DebugType>
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>

@@ -2,6 +2,16 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.6.1
+
+### 修复
+
+- **部分 Intel 11 代及以上 CPU 的机器上，双击后无窗口、无日志、进程静默退出（事件日志 `0xC0000602`，故障模块记录为 `GameTrans.exe`）**：.NET 9 起 apphost / singlefilehost 默认标记为 Intel CET（硬件影子栈）兼容；在部分较旧的 Windows 构建上，该标记会使 CoreCLR 初始化阶段触发 fail-fast，进程在进入程序代码前终止，因此没有窗口、也没有任何日志写入。项目现设置 `<CETCompat>false</CETCompat>` 关闭该标记，在这些机器上恢复正常启动。
+
+### 变更
+
+- 版本号提升至 1.6.1。关闭 CET 兼容标记仅取消影子栈加固，对其它机器的功能与行为无影响。
+
 ## 1.6.0
 
 ### 新增
